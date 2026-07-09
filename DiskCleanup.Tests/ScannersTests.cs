@@ -225,4 +225,99 @@ public class ScannersTests
         }
         finally { Directory.Delete(root, recursive: true); }
     }
+
+    // --- FindBuildDirs / HasProjectMarker (WSL whole-home walk safety fix) ---
+
+    [Fact]
+    public void FindBuildDirs_AppServerDirIsExcludedAndNeverWalkedInto()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Wsl_" + Guid.NewGuid());
+        var vscodeServer = Path.Combine(root, ".vscode-server", "extensions", "copilot", "node_modules");
+        Directory.CreateDirectory(vscodeServer);
+        File.WriteAllText(Path.Combine(vscodeServer, "index.js"), "// bundled extension code");
+        try
+        {
+            var scan = Scanners.FindBuildDirs(root);
+
+            Assert.Contains(scan.ExcludedAppDataDirs, p => p.EndsWith(".vscode-server"));
+            // Never recursed into it, so the node_modules inside must not surface as a build dir.
+            Assert.DoesNotContain(scan.BuildDirs, p => p.Contains("node_modules"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void FindBuildDirs_SkipsCacheAndNpmDirsAlreadyScannedElsewhere()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Wsl_" + Guid.NewGuid());
+        var buriedInCache = Path.Combine(root, ".cache", "some-tool", "node_modules");
+        Directory.CreateDirectory(buriedInCache);
+        try
+        {
+            var scan = Scanners.FindBuildDirs(root);
+
+            Assert.DoesNotContain(scan.BuildDirs, p => p.Contains("node_modules"));
+            Assert.DoesNotContain(scan.ExcludedAppDataDirs, p => p.EndsWith(".cache"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void FindBuildDirs_FindsOrdinaryProjectBuildDirs()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Wsl_" + Guid.NewGuid());
+        var nodeProject = Path.Combine(root, "projects", "my-app");
+        Directory.CreateDirectory(Path.Combine(nodeProject, "node_modules"));
+        var rustProject = Path.Combine(root, "projects", "rust-app");
+        Directory.CreateDirectory(Path.Combine(rustProject, "target"));
+        try
+        {
+            var scan = Scanners.FindBuildDirs(root);
+
+            Assert.Contains(scan.BuildDirs, p => p == Path.Combine(nodeProject, "node_modules"));
+            Assert.Contains(scan.BuildDirs, p => p == Path.Combine(rustProject, "target"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void HasProjectMarker_NodeModulesWithPackageJson_ReturnsTrue()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Wsl_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "package.json"), "{}");
+        try { Assert.True(Scanners.HasProjectMarker(root, "node_modules")); }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void HasProjectMarker_NodeModulesWithoutPackageJson_ReturnsFalse()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Wsl_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try { Assert.False(Scanners.HasProjectMarker(root, "node_modules")); }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData("Cargo.toml")]
+    [InlineData("pom.xml")]
+    [InlineData("build.sbt")]
+    public void HasProjectMarker_TargetWithAnyKnownBuildFile_ReturnsTrue(string markerFile)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Wsl_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, markerFile), "");
+        try { Assert.True(Scanners.HasProjectMarker(root, "target")); }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void HasProjectMarker_TargetWithNoKnownBuildFile_ReturnsFalse()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Wsl_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try { Assert.False(Scanners.HasProjectMarker(root, "target")); }
+        finally { Directory.Delete(root, recursive: true); }
+    }
 }

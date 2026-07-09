@@ -113,6 +113,48 @@ public class ActionExecutorTests
     }
 
     [Fact]
+    public void DeleteFolder_LockedFile_NamesTheBlockingFileInsteadOfGenericMessage()
+    {
+        var dir = CreateTempDirWithContents();
+        var lockedPath = Path.Combine(dir, "subdir", "nested.txt");
+
+        // Holding an exclusive FileStream open reliably makes File.Delete
+        // throw "being used by another process" without needing elevation.
+        using var lockHandle = new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        var item = new CheckItem("test folder", 0, "REVIEW", dir, Action: ActionKind.DeleteFolder);
+        var result = ActionExecutor.Execute(item);
+
+        Assert.False(result.Success);
+        Assert.Contains(lockedPath, result.Message);
+        Assert.True(Directory.Exists(dir), "Folder should survive when a file inside it couldn't be deleted.");
+
+        lockHandle.Dispose();
+        Directory.Delete(dir, recursive: true);
+    }
+
+    [Fact]
+    public void DeleteContents_LockedFile_NamesTheBlockingFileAndKeepsRestCleared()
+    {
+        var dir = CreateTempDirWithContents();
+        var lockedPath = Path.Combine(dir, "file.txt");
+
+        using var lockHandle = new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        var item = new CheckItem("test temp", 0, "SAFE", dir, Action: ActionKind.DeleteContents);
+        var result = ActionExecutor.Execute(item);
+
+        // subdir/nested.txt has no lock, so it's cleared even though file.txt is blocked.
+        Assert.True(result.Success);
+        Assert.Contains(lockedPath, result.Message);
+        Assert.True(File.Exists(lockedPath));
+        Assert.False(Directory.Exists(Path.Combine(dir, "subdir")));
+
+        lockHandle.Dispose();
+        Directory.Delete(dir, recursive: true);
+    }
+
+    [Fact]
     public void DeleteFolder_DoesNotRecurseIntoJunction()
     {
         // Target is a separate directory that should survive the deletion.
