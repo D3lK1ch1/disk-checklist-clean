@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.0.4] - 2026-07-09
+
+### Fixed
+- Delete-side failure detail — DeleteContents/DeleteFolder/SafeDeleteTree now report which
+  specific file or subfolder blocked a delete (locked, access denied) instead of a silent
+  skip count.
+- WSL node_modules/target scope — FindBuildDirs now classifies each hit SAFE only when a
+  project marker (package.json, Cargo.toml/pom.xml/build.sbt) sits next to it, REVIEW
+  otherwise. Known remote-dev-server dirs (.vscode-server and siblings) are pulled out as
+  INFO-only rows instead of being walked into and offered as deletable.
+
+### Known issues
+- Docker scanner can show `0B` reclaimable rows as actionable.
+- WSL build-folder discovery can still recurse through reparse points before size
+  calculation/deletion guards apply — separate from the node_modules scope fix above.
+- WPF checkbox behavior is manually verified only; automated tests cover DiskCleanup.Core,
+  not WPF binding behavior.
+
+### Verification
+- `dotnet test` passed on 2026-07-09: 43 passed, 0 failed, 0 skipped.
+
 ## [0.0.3] - 2026-06-18.
 
 ### Known issues
