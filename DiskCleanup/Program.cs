@@ -7,6 +7,7 @@ items.AddRange(Scanners.RecycleBin(warnings));
 items.AddRange(Scanners.TempFolders());
 items.AddRange(Scanners.VsCodeCache(warnings));
 items.AddRange(Scanners.Wsl(warnings));
+items.AddRange(Scanners.NativeBuildDirs(warnings));
 items.AddRange(Scanners.Docker(warnings));
 items.AddRange(Scanners.DockerVhdxBloat(warnings: warnings));
 items.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));
