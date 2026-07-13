@@ -320,4 +320,78 @@ public class ScannersTests
         try { Assert.False(Scanners.HasProjectMarker(root, "target")); }
         finally { Directory.Delete(root, recursive: true); }
     }
+
+    [Fact]
+    public void FindNativeBuildDirs_FindsOrdinaryProjectBuildDirs()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Native_" + Guid.NewGuid());
+        var nodeProject = Path.Combine(root, "projects", "my-app");
+        Directory.CreateDirectory(Path.Combine(nodeProject, "node_modules"));
+        var rustProject = Path.Combine(root, "projects", "rust-app");
+        Directory.CreateDirectory(Path.Combine(rustProject, "target"));
+        try
+        {
+            var buildDirs = Scanners.FindNativeBuildDirs(root);
+
+            Assert.Contains(buildDirs, p => p == Path.Combine(nodeProject, "node_modules"));
+            Assert.Contains(buildDirs, p => p == Path.Combine(rustProject, "target"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData("AppData")]
+    [InlineData("Program Files")]
+    [InlineData("Windows")]
+    public void FindNativeBuildDirs_NeverDescendsIntoOsVendorDirs(string vendorDirName)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Native_" + Guid.NewGuid());
+        var bundledNodeModules = Path.Combine(root, vendorDirName, "SomeApp", "resources", "node_modules");
+        Directory.CreateDirectory(bundledNodeModules);
+        try
+        {
+            var buildDirs = Scanners.FindNativeBuildDirs(root);
+
+            Assert.DoesNotContain(buildDirs, p => p.Contains("node_modules"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void FindNativeBuildDirs_DoesNotFollowJunctionsWhileDiscovering()
+    {
+        // Junctions (unlike symlinks) need no special privilege to create,
+        // so this runs the real guard logic on every machine.
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Native_" + Guid.NewGuid());
+        var target = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_NativeLinkTarget_" + Guid.NewGuid());
+        Directory.CreateDirectory(Path.Combine(target, "node_modules"));
+        Directory.CreateDirectory(root);
+
+        var junction = Path.Combine(root, "linked-project");
+        var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{junction}\" \"{target}\"")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        using var proc = System.Diagnostics.Process.Start(psi)!;
+        proc.WaitForExit(5000);
+        Assert.True(Directory.Exists(junction), $"mklink /J failed to create the junction: {proc.StandardError.ReadToEnd()}");
+
+        try
+        {
+            var buildDirs = Scanners.FindNativeBuildDirs(root);
+
+            Assert.DoesNotContain(buildDirs, p => p.Contains("node_modules"));
+        }
+        finally
+        {
+            // Remove the junction itself (not recursively - that would
+            // follow it into target) before cleaning up both directories.
+            Directory.Delete(junction, recursive: false);
+            Directory.Delete(root, recursive: true);
+            Directory.Delete(target, recursive: true);
+        }
+    }
 }
