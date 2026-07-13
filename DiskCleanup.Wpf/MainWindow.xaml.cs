@@ -31,8 +31,10 @@ public partial class MainWindow : Window
             var result = new List<CheckItem>();
             result.AddRange(Scanners.RecycleBin(warnings));
             result.AddRange(Scanners.TempFolders());
+            result.AddRange(Scanners.WindowsUpdateCache());
             result.AddRange(Scanners.VsCodeCache(warnings));
             result.AddRange(Scanners.Wsl(warnings));
+            result.AddRange(Scanners.NativeBuildDirs(warnings));
             result.AddRange(Scanners.Docker(warnings));
             result.AddRange(Scanners.DockerVhdxBloat(warnings: warnings));
             result.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));
