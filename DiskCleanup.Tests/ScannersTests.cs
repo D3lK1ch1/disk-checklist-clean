@@ -321,6 +321,70 @@ public class ScannersTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Theory]
+    [InlineData("package-lock.json")]
+    [InlineData("pnpm-lock.yaml")]
+    [InlineData("yarn.lock")]
+    public void HasLockfile_WithAnyKnownLockfile_ReturnsTrue(string lockfileName)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Lockfile_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, lockfileName), "");
+        try { Assert.True(Scanners.HasLockfile(root)); }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void HasLockfile_NoLockfile_ReturnsFalse()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Lockfile_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try { Assert.False(Scanners.HasLockfile(root)); }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void IsWorkspaceRoot_PackageJsonWithWorkspacesField_ReturnsTrue()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Workspace_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "package.json"), "{\"workspaces\": [\"packages/*\"]}");
+        try { Assert.True(Scanners.IsWorkspaceRoot(root)); }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void IsWorkspaceRoot_PnpmWorkspaceYamlSibling_ReturnsTrue()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Workspace_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n");
+        try { Assert.True(Scanners.IsWorkspaceRoot(root)); }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void IsWorkspaceRoot_PlainPackageJson_ReturnsFalse()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Workspace_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "package.json"), "{\"name\": \"my-app\"}");
+        try { Assert.False(Scanners.IsWorkspaceRoot(root)); }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void IsWorkspaceRoot_MalformedPackageJson_ReturnsFalse()
+    {
+        // A malformed package.json isn't a workspace signal either way - it
+        // shouldn't crash the scan (see ClassifyBuildDir's JsonException catch).
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Workspace_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "package.json"), "{not valid json");
+        try { Assert.False(Scanners.IsWorkspaceRoot(root)); }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Fact]
     public void FindNativeBuildDirs_FindsOrdinaryProjectBuildDirs()
     {
