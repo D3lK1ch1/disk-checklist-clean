@@ -32,6 +32,7 @@ public partial class MainWindow : Window
             result.AddRange(Scanners.RecycleBin(warnings));
             result.AddRange(Scanners.TempFolders());
             result.AddRange(Scanners.WindowsUpdateCache());
+            result.AddRange(Scanners.WindowsTempFolder(warnings));
             result.AddRange(Scanners.VsCodeCache(warnings));
             result.AddRange(Scanners.Wsl(warnings));
             result.AddRange(Scanners.NativeBuildDirs(warnings));

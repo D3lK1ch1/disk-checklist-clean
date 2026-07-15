@@ -56,6 +56,26 @@ public static class Scanners
         return items;
     }
 
+    // Windows-only: C:\Windows\Temp is the system-wide temp folder (shared across
+    // users/services), distinct from the per-user %TEMP% already covered by
+    // TempFolders(). Files here may be locked by other users' processes or
+    // services - delete-side failures surface via the existing warning collection,
+    // same as WindowsUpdateCache().
+    public static List<CheckItem> WindowsTempFolder(List<string>? warnings = null)
+    {
+        var items = new List<CheckItem>();
+
+        var windowsTemp = @"C:\Windows\Temp";
+        try
+        {
+            if (Directory.Exists(windowsTemp))
+                items.Add(new CheckItem("Windows Temp (system-wide)", GetDirectorySize(windowsTemp), "SAFE", windowsTemp, Action: ActionKind.DeleteContents));
+        }
+        catch (Exception ex) { warnings?.Add($"Windows Temp (system-wide): could not read ({ex.Message})"); }
+
+        return items;
+    }
+
     public static List<CheckItem> VsCodeCache(List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
