@@ -138,6 +138,86 @@ public class ScannersTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public void ScanClaudeFolder_CascadesSessionFolderIntoMatchingJsonl()
+    {
+        var root = CreateFakeClaudeTree();
+        try
+        {
+            var project = Path.Combine(root, "projects", "cascade-project");
+            Directory.CreateDirectory(project);
+
+            const string sessionId = "cascade-session";
+            var jsonl = Path.Combine(project, sessionId + ".jsonl");
+            File.WriteAllText(jsonl, "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hi\"}}\n");
+
+            var sessionDir = Path.Combine(project, sessionId);
+            var subagents = Path.Combine(sessionDir, "subagents");
+            Directory.CreateDirectory(subagents);
+            File.WriteAllText(Path.Combine(subagents, "agent-a1.jsonl"), new string('x', 500));
+
+            var items = Scanners.ScanClaudeFolder(root);
+
+            var item = Assert.Single(items, i => i.Path == jsonl);
+            Assert.Equal(sessionDir, item.SecondaryPath);
+            Assert.True(item.SizeBytes > 500); // includes the subagents folder's bytes, not just the jsonl
+
+            // The session folder must not also surface as its own orphan row.
+            Assert.DoesNotContain(items, i => i.Path == sessionDir);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ScanClaudeFolder_OrphanedSessionFolder_FlaggedAsSafeRow()
+    {
+        var root = CreateFakeClaudeTree();
+        try
+        {
+            var project = Path.Combine(root, "projects", "orphan-project");
+            Directory.CreateDirectory(project);
+
+            const string sessionId = "orphan-session";
+            var sessionDir = Path.Combine(project, sessionId);
+            var subagents = Path.Combine(sessionDir, "subagents");
+            Directory.CreateDirectory(subagents);
+            File.WriteAllText(Path.Combine(subagents, "agent-a1.jsonl"), new string('x', 500));
+            // Deliberately no <sessionId>.jsonl next to it - conversation already deleted.
+
+            var items = Scanners.ScanClaudeFolder(root);
+
+            var item = Assert.Single(items, i => i.Path == sessionDir);
+            Assert.Equal("SAFE", item.Risk);
+            Assert.Equal(ActionKind.MoveFolderToRecycleBin, item.Action);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ScanClaudeFolder_ActiveSessionOrphanFolder_NotFlagged()
+    {
+        var root = CreateFakeClaudeTree();
+        try
+        {
+            const string activeSessionId = "active-orphan-session";
+
+            var sessionsDir = Path.Combine(root, "sessions");
+            Directory.CreateDirectory(sessionsDir);
+            File.WriteAllText(Path.Combine(sessionsDir, "8888.json"),
+                $"{{\"pid\":8888,\"sessionId\":\"{activeSessionId}\",\"status\":\"busy\"}}");
+
+            var project = Path.Combine(root, "projects", "active-orphan-project");
+            var sessionDir = Path.Combine(project, activeSessionId);
+            Directory.CreateDirectory(Path.Combine(sessionDir, "subagents"));
+            File.WriteAllText(Path.Combine(sessionDir, "subagents", "agent-a1.jsonl"), "content");
+
+            var items = Scanners.ScanClaudeFolder(root);
+
+            Assert.DoesNotContain(items, i => i.Path == sessionDir);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     static string CreateFakeCodexTree()
     {
         var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Codex_" + Guid.NewGuid());
