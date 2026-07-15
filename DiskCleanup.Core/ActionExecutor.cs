@@ -147,6 +147,15 @@ public static class ActionExecutor
     {
         var result = TrashProvider.MoveToTrash(item.Path!);
         var message = result.Success ? result.Message + WslCompactionNote(item.Path) : result.Message;
+
+        if (item.SecondaryPath != null && Directory.Exists(item.SecondaryPath))
+        {
+            var secondary = TrashProvider.MoveToTrash(item.SecondaryPath);
+            message += secondary.Success
+                ? " Paired folder moved to Recycle Bin too."
+                : $" Could not move paired folder \"{item.SecondaryPath}\": {secondary.Message}";
+        }
+
         return new ActionResult(item, result.Success, message);
     }
 }

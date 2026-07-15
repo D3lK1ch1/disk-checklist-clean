@@ -523,8 +523,24 @@ public static class Scanners
                     try { jsonlFiles = Directory.EnumerateFiles(projectDir, "*.jsonl").OrderBy(System.IO.Path.GetFileName).ToList(); }
                     catch { continue; }
 
-                    // Loose session files only - never recurses into the
-                    // adjacent projects/*/memory/ subdirectory.
+                    // Session-named subdirectories (subagents/, tool-results/) that
+                    // Claude Code creates next to a session's .jsonl - "memory/" is
+                    // deliberately excluded, it's project-level persistent memory, not
+                    // session-scoped. Matched to their sibling .jsonl below (cascade
+                    // delete); whatever's left unmatched after that loop is an orphan
+                    // whose conversation was already deleted.
+                    var sessionDirs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    try
+                    {
+                        foreach (var dir in Directory.EnumerateDirectories(projectDir))
+                        {
+                            var dirName = System.IO.Path.GetFileName(dir);
+                            if (string.Equals(dirName, "memory", StringComparison.OrdinalIgnoreCase)) continue;
+                            sessionDirs[dirName] = dir;
+                        }
+                    }
+                    catch { }
+
                     foreach (var jsonl in jsonlFiles)
                     {
                         // The transcript filename IS the sessionId (verified:
@@ -544,9 +560,40 @@ public static class Scanners
                         var (msgCount, excerpt) = AnalyzeClaudeSession(jsonl);
                         var reason = DescribeSessionFile("Claude Code", lastWrite, msgCount, excerpt);
 
+                        // Cascade: a sibling <sessionId>/ folder (subagents/,
+                        // tool-results/) is removed in the same action as its
+                        // conversation - consumed here so the orphan pass below
+                        // doesn't also list it.
+                        string? secondaryPath = null;
+                        if (sessionDirs.Remove(sessionId, out var sessionDir))
+                        {
+                            secondaryPath = sessionDir;
+                            size += GetDirectorySize(sessionDir);
+                            reason += " Includes this session's subagent/tool-result data.";
+                        }
+
                         items.Add(new CheckItem(
                             $".claude\\projects\\{projectName}\\{System.IO.Path.GetFileName(jsonl)}",
-                            size, "REVIEW", jsonl, Action: ActionKind.MoveFileToRecycleBin, Reason: reason));
+                            size, "REVIEW", jsonl, Action: ActionKind.MoveFileToRecycleBin, Reason: reason,
+                            SecondaryPath: secondaryPath));
+                    }
+
+                    // Orphans: a session folder with no matching .jsonl left - the
+                    // conversation itself was already deleted (by a prior cleanup,
+                    // manually, etc.), so this is leftover subagent/tool-result data
+                    // with no transcript left to reference. Still skips active
+                    // sessions, same as the jsonl loop above.
+                    foreach (var (sessionId, sessionDir) in sessionDirs.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+                    {
+                        if (activeSessionIds.Contains(sessionId)) continue;
+
+                        var size = GetDirectorySize(sessionDir);
+                        if (size == 0) continue;
+
+                        items.Add(new CheckItem(
+                            $".claude\\projects\\{projectName}\\{sessionId} (orphaned subagent data)",
+                            size, "SAFE", sessionDir, Action: ActionKind.MoveFolderToRecycleBin,
+                            Reason: "Subagent/tool-result data left behind after this session's conversation transcript was already deleted. No conversation exists to reference anymore - safe to remove."));
                     }
                 }
             }

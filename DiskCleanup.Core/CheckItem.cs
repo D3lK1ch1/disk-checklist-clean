@@ -19,7 +19,11 @@ public record CheckItem(
     string? SizeOverride = null,
     ActionKind Action = ActionKind.None,
     string? CommandSuggestion = null,
-    string? Reason = null)
+    string? Reason = null,
+    // Paired folder that gets removed alongside Path in the same action, e.g. a
+    // Claude Code session's <sessionId>/ subagents+tool-results dir next to its .jsonl.
+    // Only MoveFileToRecycleBin honors this today - not a generic multi-path mechanism.
+    string? SecondaryPath = null)
 {
     public string FormattedSize => SizeOverride ?? Format(SizeBytes);
 
