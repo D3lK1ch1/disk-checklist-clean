@@ -8,6 +8,7 @@ items.AddRange(Scanners.TempFolders());
 items.AddRange(Scanners.WindowsUpdateCache());
 items.AddRange(Scanners.WindowsTempFolder(warnings));
 items.AddRange(Scanners.VsCodeCache(warnings));
+items.AddRange(Scanners.DevPackageCaches(warnings));
 items.AddRange(Scanners.Wsl(warnings));
 items.AddRange(Scanners.NativeBuildDirs(warnings));
 items.AddRange(Scanners.Docker(warnings));

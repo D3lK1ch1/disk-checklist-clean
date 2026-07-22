@@ -89,6 +89,33 @@ public static class Scanners
         return items;
     }
 
+    // Optional path overrides exist only so tests can point at a fake tree instead
+    // of the real ~/.nuget/packages or pip cache - production callers pass neither.
+    public static List<CheckItem> DevPackageCaches(List<string>? warnings = null, string? nugetPath = null, string? pipPath = null)
+    {
+        var items = new List<CheckItem>();
+
+        var nuget = nugetPath ?? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
+        try
+        {
+            if (Directory.Exists(nuget))
+                items.Add(new CheckItem("NuGet package cache", GetDirectorySize(nuget), "SAFE", nuget, Action: ActionKind.DeleteContents,
+                    Reason: "Package download cache. Deleting it doesn't remove anything you've installed — the next build just re-downloads packages from NuGet instead of using this local cache, which is slower but not destructive."));
+        }
+        catch (Exception ex) { warnings?.Add($"NuGet package cache: could not read ({ex.Message})"); }
+
+        var pip = pipPath ?? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "pip", "Cache");
+        try
+        {
+            if (Directory.Exists(pip))
+                items.Add(new CheckItem("pip download cache", GetDirectorySize(pip), "SAFE", pip, Action: ActionKind.DeleteContents,
+                    Reason: "Package download cache. Deleting it doesn't remove anything you've installed — the next pip install just re-downloads packages from PyPI instead of using this local cache, which is slower but not destructive."));
+        }
+        catch (Exception ex) { warnings?.Add($"pip download cache: could not read ({ex.Message})"); }
+
+        return items;
+    }
+
     public static List<CheckItem> Wsl(List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
