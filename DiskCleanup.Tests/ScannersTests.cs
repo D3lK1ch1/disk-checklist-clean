@@ -538,4 +538,43 @@ public class ScannersTests
             Directory.Delete(target, recursive: true);
         }
     }
+
+    [Fact]
+    public void DevPackageCaches_BothPathsExist_ReturnsBothAsSafe()
+    {
+        var nuget = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Nuget_" + Guid.NewGuid());
+        var pip = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_Pip_" + Guid.NewGuid());
+        Directory.CreateDirectory(nuget);
+        Directory.CreateDirectory(pip);
+        File.WriteAllText(Path.Combine(nuget, "package.nupkg"), "fake package bytes");
+        try
+        {
+            var items = Scanners.DevPackageCaches(nugetPath: nuget, pipPath: pip);
+
+            var nugetItem = Assert.Single(items, i => i.Label == "NuGet package cache");
+            Assert.Equal("SAFE", nugetItem.Risk);
+            Assert.Equal(ActionKind.DeleteContents, nugetItem.Action);
+            Assert.True(nugetItem.SizeBytes > 0);
+
+            var pipItem = Assert.Single(items, i => i.Label == "pip download cache");
+            Assert.Equal("SAFE", pipItem.Risk);
+            Assert.Equal(ActionKind.DeleteContents, pipItem.Action);
+        }
+        finally
+        {
+            Directory.Delete(nuget, recursive: true);
+            Directory.Delete(pip, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DevPackageCaches_NeitherPathExists_ReturnsNoItems()
+    {
+        var nuget = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_NugetMissing_" + Guid.NewGuid());
+        var pip = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_PipMissing_" + Guid.NewGuid());
+
+        var items = Scanners.DevPackageCaches(nugetPath: nuget, pipPath: pip);
+
+        Assert.Empty(items);
+    }
 }
