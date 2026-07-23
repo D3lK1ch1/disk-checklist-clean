@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.0.0] - 2026-07-23
+
+First public release — prebuilt, self-contained `.exe` published on GitHub Releases.
+Version number reset to mark this as the first binary anyone outside this machine can
+run; it supersedes [0.0.4] in scope — everything below was built and verified after that
+entry was written, on top of everything [0.0.4] already covered.
+
+### Added
+- `NativeBuildDirs`/`FindNativeBuildDirs` — Windows-native `node_modules`/`target`
+  scanning under Downloads/Documents/Desktop, reusing the same SAFE-only-with-a-project-
+  marker logic as WSL's `FindBuildDirs`. Test coverage in `ScannersTests.cs`.
+- `ITrashProvider` platform-abstraction seam — `MoveToTrash`/`EmptyTrash` now go through
+  an interface (`WindowsTrashProvider` the only implementation today), replacing direct
+  Win32 `DllImport` calls in `ActionExecutor`.
+- Subagent folder cascade + orphan detection — `ScanClaudeFolder` matches a session's
+  `.jsonl` against its sibling `subagents`/`tool-results` folder and deletes both in one
+  action; a folder left behind by a prior partial cleanup gets its own SAFE row instead of
+  being missed.
+- `WindowsTempFolder()` — system-wide `C:\Windows\Temp` scanning/cleanup, distinct from
+  user `%TEMP%`.
+- `DevPackageCaches()` — NuGet (`~/.nuget/packages`) and pip (`%LocalAppData%\pip\Cache`)
+  cache scanning.
+
+### Known issues
+- Docker scanner can show `0B` reclaimable rows as actionable.
+- WSL build-folder discovery can still recurse through reparse points before size
+  calculation/deletion guards apply.
+- WPF checkbox behavior is manually verified only; automated tests cover DiskCleanup.Core,
+  not WPF binding behavior.
+
+### Verification
+- Live full run, 2026-07-22: Recycle Bin + User Temp + Windows Temp + WSL/native AI-folder
+  session files, 51.1GB → 60.5GB free (+9.4GB), zero crashes, every locked-file skip named
+  by specific path and reason. NuGet/pip deletion itself not exercised this run (held off
+  while `dotnet run` was active in the same session).
+- Live run, 2026-07-15: `WindowsTempFolder` cleared 121/123 entries without elevation (2
+  correctly skipped as genuinely locked); subagent-cascade fix found and cleanly deleted 19
+  pre-existing orphaned session folders, zero failures.
+
 ## [0.0.4] - 2026-07-09
 
 ### Fixed
