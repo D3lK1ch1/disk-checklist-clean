@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.0.1] - 2026-08-07
+
+Packaging fix — supersedes [0.0.0] as the first binary that actually runs when downloaded.
+[0.0.0]'s GitHub release asset never worked on any machine other than the one it was built
+on. Not the same release as the `[0.0.1] - 2026-06-15` entry further below — that predates
+the version reset noted under [0.0.0]; kept both rather than rewriting history, same call
+made when [0.0.0] superseded [0.0.4].
+
+### Fixed
+- Release exe didn't launch at all — no window, no error dialog, no Application or Defender
+  event log entry, on a machine with the correct .NET runtime installed. Root cause:
+  `DiskCleanup.Wpf.csproj` had no `SelfContained`/`RuntimeIdentifier`, so `dotnet publish`
+  produced a framework-dependent build needing `DiskCleanup.Wpf.dll`, `DiskCleanup.Core.dll`,
+  `.deps.json`, and `.runtimeconfig.json` alongside the exe — only the bare exe was ever
+  attached to the [0.0.0] release. Republished self-contained + single-file
+  (`dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+  -p:IncludeNativeLibrariesForSelfExtract=true`). `PublishSingleFile` alone still left five
+  native WPF DLLs (`D3DCompiler_47_cor3.dll`, `PresentationNative_cor3.dll`,
+  `wpfgfx_cor3.dll`, `PenImc_cor3.dll`, `vcruntime140_cor3.dll`) loose next to the exe,
+  reproducing the identical failure in testing — `IncludeNativeLibrariesForSelfExtract` was
+  needed to actually bundle them.
+- README's "self-contained" claim for [0.0.0] was inaccurate given the actual
+  framework-dependent build; corrected to describe the real single-file exe.
+
+### Verification
+- Copied the rebuilt exe alone into an isolated folder (no companion files) and launched it
+  via `Start-Process`: confirmed a real window (title "Disk Cleanup", valid
+  `MainWindowHandle`) opened — not just "process didn't crash." Ruled out SmartScreen
+  (reproduced after clicking "Run anyway"), antivirus (Defender operational log showed only
+  routine health checks, no detection/quarantine events), and a missing runtime
+  (`Microsoft.WindowsDesktop.App 10.0.2` confirmed installed) before finding the actual
+  cause.
+
 ## [0.0.0] - 2026-07-23
 
 First public release — prebuilt, self-contained `.exe` published on GitHub Releases.

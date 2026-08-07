@@ -80,9 +80,10 @@ dotnet test
 ## Getting the exe without building it
 
 Grab the latest `.exe` from [Releases](https://github.com/D3lK1ch1/disk-cleanup/releases)
-— no .NET runtime install required, self-contained. It's unsigned, so Windows SmartScreen
-will show a "Windows protected your PC" warning on first run — that's expected for an
-unsigned indie exe, not a sign anything's wrong. Click **More info → Run anyway** to proceed.
+— a single self-contained file (~130MB), no .NET runtime install and no other files needed
+alongside it. It's unsigned, so Windows SmartScreen will show a "Windows protected your PC"
+warning on first run — that's expected for an unsigned indie exe, not a sign anything's
+wrong. Click **More info → Run anyway** to proceed.
 
 ## Roadmap
 
