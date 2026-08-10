@@ -1,4 +1,4 @@
-# disk-cleanup
+# disk-checklist-clean
 
 A personal Windows disk-space cleanup tool. Scans common sources of reclaimable space, shows you a checklist, and only deletes what you explicitly tick and confirm. Nothing runs automatically, and nothing leaves your machine — there are no network calls anywhere in this codebase.
 
