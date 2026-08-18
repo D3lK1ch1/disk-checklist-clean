@@ -32,8 +32,20 @@ public class WindowsTrashProvider : ITrashProvider
 
     // SHFileOperation/FO_DELETE works the same whether pFrom is a file or a
     // directory, so this one method covers both callers in ActionExecutor.
+    //
+    // UNC paths (\\wsl.localhost\..., \\server\share\...) are checked first:
+    // the Windows Recycle Bin has no concept of a network/WSL location.
+    // Empirically verified (2026-08-18): calling SHFileOperation with
+    // FOF_ALLOWUNDO against a \\wsl.localhost\ path returns success and would
+    // report "Moved to Recycle Bin" here, but the file never appears in the
+    // Recycle Bin - it's silently, permanently gone. Rather than let that
+    // silent OS behavior report itself as recoverable, this path is deleted
+    // explicitly and reported as what it actually is.
     public TrashResult MoveToTrash(string path)
     {
+        if (path.StartsWith(@"\\", StringComparison.Ordinal))
+            return PermanentlyDeleteUncPath(path);
+
         try
         {
             // pFrom must be double-null-terminated; the extra '\0' plus the
@@ -54,6 +66,30 @@ public class WindowsTrashProvider : ITrashProvider
         catch (Exception ex)
         {
             return new TrashResult(false, $"Failed to move to Recycle Bin: {ex.Message}");
+        }
+    }
+
+    static TrashResult PermanentlyDeleteUncPath(string path)
+    {
+        var failures = new List<string>();
+        try
+        {
+            if (Directory.Exists(path))
+                ActionExecutor.SafeDeleteTree(path, failures);
+            else if (File.Exists(path))
+                File.Delete(path);
+            else
+                return new TrashResult(false, "Path not found.");
+
+            if (failures.Count > 0)
+                return new TrashResult(false, $"Partially deleted. Blocked by: {string.Join("; ", failures)}.");
+
+            return new TrashResult(true,
+                "Permanently deleted - the Recycle Bin doesn't support network/WSL paths, so this could not be sent there and cannot be undone.");
+        }
+        catch (Exception ex)
+        {
+            return new TrashResult(false, $"Failed to delete: {ex.Message}");
         }
     }
 
