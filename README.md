@@ -22,6 +22,7 @@ The scheduled/background check work is still pending — see [Roadmap](#roadmap)
 - Docker reclaimable space (`docker system df`) and Docker Desktop's WSL2 `.vhdx` bloat (never auto-shrinks — flags it and suggests a `diskpart` compaction command to run yourself)
 - Top-N largest folders in Downloads, Documents, Desktop, Pictures, Music, Videos
 - `AppData\Local\Packages` folders untouched 6+ months, cross-checked against `Get-AppxPackage` to distinguish "app uninstalled" from "app still installed, folder just looks stale"
+- `AppData\Roaming` folders named like a reverse-domain identifier (`com.vendor.app`, the convention Tauri/Electron-style desktop apps use) — always REVIEW, no install cross-check possible for this ID format
 - `.claude` / `.codex` AI tool folders — known-safe cache subpaths, plus individual old session transcripts (age, message count, and a first-message excerpt so you can judge each one, not a size-only guess)
 - Top installed apps by size (registry) — **informational only**
 
@@ -40,7 +41,7 @@ Deleting a cache folder removes bytes nothing else depends on, and it's fully re
 ## Safety
 
 - **Self-deletion guard** — the Downloads scan never lists (or offers to delete) the folder this tool is running from, even if it ranks in the top N by size.
-- **Recycle Bin, not permanent delete** — REVIEW-risk folders go through `SHFileOperation` with `FOF_ALLOWUNDO`, so they're recoverable. SAFE items (temp/cache contents) are deleted directly, since they're fully regenerable by design.
+- **Recycle Bin, not permanent delete** — REVIEW-risk folders go through `SHFileOperation` with `FOF_ALLOWUNDO`, so they're recoverable. SAFE items (temp/cache contents) are deleted directly, since they're fully regenerable by design. **Exception:** the Windows Recycle Bin doesn't support network/WSL paths (`\\wsl.localhost\...`) at all — REVIEW items found there (WSL `.claude`/`.codex` cache, session files, build dirs) are permanently deleted instead, and the result message and Reason text say so explicitly rather than claiming a recoverability that isn't real.
 - **Symlinks and junctions are never followed** — both when computing folder sizes and when deleting a folder, a symlink or junction found inside it is removed as a link only. Its target (e.g. a pnpm-style `node_modules` link, or a WSL mount) is left untouched.
 - **WSL space accounting** — deleting files under a `\\wsl.localhost\...` path frees space inside that distro's virtual disk, not on `C:` directly. The result log notes this so the before/after free-space numbers aren't confusing.
 - **`.claude`/`.codex` root folders are never offered whole** — only an allowlist of verified-safe cache subpaths and individual old session files. The root holds credentials, settings, and live memory files.

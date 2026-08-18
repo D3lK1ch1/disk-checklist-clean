@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.0.2] - 2026-08-18 (drafted, not yet tagged/released)
+
+### Added
+- `RoamingAppData()` scanner (`Scanners.cs`) — flags top-level `%APPDATA%` folders whose
+  name follows the reverse-domain identifier convention (`com.vendor.app`) that
+  Tauri/Electron-style desktop apps use for per-user data. Matched via a curated TLD-prefix
+  allowlist (`com`/`org`/`net`/`io`/`dev`/`app`/`co`/`me`/`xyz`, ≥3 dot-separated segments),
+  not a bare "contains a dot" check, so vendor folders like `Microsoft` or versioned names
+  like `Python 3.12` can never match. Always REVIEW + `MoveFolderToRecycleBin`, never SAFE —
+  unlike `StalePackages`, there's no install cross-check for this ID format (bundle IDs don't
+  map onto registry DisplayNames, and `Get-AppxPackage` only covers MSIX/Store apps), so the
+  Reason text says so plainly instead of implying a confidence level the scanner doesn't have.
+  Found by inspecting a real leftover: `com.d3lk1ch1.accountabilityapp` (88KB, containing an
+  `accountability.db.unreadable.<n>` file — a database that failed to open/decrypt and was
+  renamed aside, a strong dead-prototype signal).
+
+### Fixed
+- **WSL/network paths falsely reported as "Moved to Recycle Bin."** Confirmed empirically
+  (not assumed): a throwaway file was written to `\\wsl.localhost\Ubuntu\home\...`, then
+  `WindowsTrashProvider.MoveToTrash` was called against it directly, then the real Recycle Bin
+  was searched via `Shell.Application`'s `Namespace(10)` for the item. `SHFileOperation` with
+  `FOF_ALLOWUNDO` returned success and this tool reported "Moved to Recycle Bin" — but the file
+  was never in the Recycle Bin. It was silently, permanently gone. The Windows Recycle Bin has
+  no concept of a UNC/network location; `FOF_ALLOWUNDO` is silently ignored for such paths.
+  This means every existing REVIEW-tier WSL row using `MoveFolderToRecycleBin`/
+  `MoveFileToRecycleBin` (`.claude`/`.codex` cache dirs, session `.jsonl` transcripts, orphaned
+  subagent folders) was already misreporting recoverability before this fix, for as long as
+  those scanners have existed.
+  - `WindowsTrashProvider.MoveToTrash` now detects UNC paths (`\\` prefix) up front and
+    explicitly permanently-deletes via the existing reparse-point-safe `SafeDeleteTree`
+    (bumped from `private` to `internal` in `ActionExecutor` so it can be reused instead of
+    duplicated), returning an honest result: *"Permanently deleted - the Recycle Bin doesn't
+    support network/WSL paths... cannot be undone."*
+  - Every WSL-path `CheckItem` whose action requests the Recycle Bin now carries the same
+    caveat in its `Reason` text (`Scanners.AppendUncRecycleBinNote`), so it's visible in the
+    Details panel *before* the user clicks Clean, not only in the after-the-fact log message.
+- **REVIEW-tier build dirs used permanent delete instead of Recycle Bin.** `ClassifyBuildDir`
+  (`node_modules`/`target` discovery, both WSL and native) used `ActionKind.DeleteFolder` for
+  *every* tier, including the two REVIEW branches (no project marker found; `node_modules`
+  with no lockfile) — inconsistent with this project's own stated safety model ("REVIEW uses
+  Recycle Bin where possible," Review.md). Both REVIEW branches now use
+  `MoveFolderToRecycleBin`. On native paths (Downloads/Documents/Desktop) this is a genuine
+  fix — an uncertain-marker hit is now actually recoverable. On WSL paths it's still
+  effectively permanent per the OS limitation above, but is now honestly labeled instead of
+  silently so. SAFE-tier build dirs (marker + lockfile both present) are unchanged — still
+  permanent delete, consistent with how this codebase already treats other high-confidence
+  regenerable caches (temp/cache contents).
+- **WPF Details pane text wasn't copyable.** `DetailsText` (`MainWindow.xaml`) was a
+  `TextBlock` — WPF `TextBlock` content genuinely cannot be mouse-selected at all, regardless
+  of styling. Swapped for a read-only, borderless `TextBox`, which renders identically but
+  supports drag-select and copy.
+
+### Known gaps
+- No automated test coverage added this session for `RoamingAppData` (it does take a
+  `rootOverride` for testability, unlike Docker/Wsl — this is a real gap, not an
+  can't-be-seamed precedent) or for `WindowsTrashProvider`'s new UNC-detection branch
+  (its delegated deletion logic is exercised indirectly via `SafeDeleteTree`'s existing
+  tests, but the UNC-path branch itself has zero direct coverage). Verified live/empirically
+  instead — see Fixed above.
+
+### Verification
+- `dotnet build` — 0 warnings, 0 errors.
+- `dotnet test` — 68 passed, 0 failed, 0 skipped.
+- Live empirical test against a real WSL (Ubuntu) UNC path, described under Fixed above.
+
 ## [0.0.1] - 2026-08-07
 
 Packaging fix — supersedes [0.0.0] as the first binary that actually runs when downloaded.
