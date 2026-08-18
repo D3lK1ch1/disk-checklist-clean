@@ -302,6 +302,165 @@ public static class Scanners
         return items;
     }
 
+    // Outcome of an optional per-entry local-check (see SystemRootEntry.LocalCheck)
+    // that cross-references whether the hardware/software a Tier A item depends on
+    // is still on this machine - same three-outcome honesty as StalePackages's
+    // lookupSucceeded pattern: a failed check must say so, never silently read as
+    // "absent" (which would wrongly strengthen a safe-to-delete claim).
+    public enum LocalCheckOutcome { Present, Absent, Unknown }
+
+    // A single allowlist entry for SystemRootClutter - one exact name matched
+    // directly under C:\ root, plus everything needed to classify it once found.
+    // IsFile distinguishes DumpStack.log-style single files from folder leftovers
+    // like HP eSupport - the two need different existence checks and size calls.
+    // LocalCheck/CheckSubject are only set for entries whose safety genuinely
+    // depends on this machine's hardware/software (Unit 2) - the SAFE/INFO entries
+    // don't have that dependency, so they're left null and skip the check step.
+    record SystemRootEntry(string Name, bool IsFile, string Risk, ActionKind Action, string Reason,
+        string? CommandSuggestion = null, Func<LocalCheckOutcome>? LocalCheck = null, string? CheckSubject = null);
+
+    // Curated exact-name allowlist, tiered by actual risk (not by "looks like
+    // C:\ root clutter") - see SPEC.md's "Planned: system-root clutter" section
+    // for the research behind each entry. intelFPGA is deliberately absent: it's
+    // the live Quartus Prime installation (C:\intelFPGA_lite), not leftover
+    // debris, same category as the runtime installers this scanner never touches.
+    static readonly SystemRootEntry[] SystemRootAllowlist =
+    {
+        new("DumpStack.log", true, "SAFE", ActionKind.DeleteFile,
+            "Bug-check stack-trace log written during crash-dump generation - not the crash dump itself (that lives in separate .dmp/minidump files). No hardware or software dependency; confirmed safe to delete."),
+        new("DumpStack.log.tmp", true, "SAFE", ActionKind.DeleteFile,
+            "Temporary working copy created during the same crash-dump logging process as DumpStack.log. Same reasoning - safe to delete."),
+
+        new("HP eSupport", false, "REVIEW", ActionKind.MoveFolderToRecycleBin,
+            "HP driver/diagnostic installer leftover. Community guidance on this one is genuinely mixed - keep it if you still use HP support software or might need to reinstall HP drivers without internet access later; otherwise it's safe to remove.",
+            LocalCheck: CheckHpHardwarePresent, CheckSubject: "HP-manufactured hardware"),
+        new("RyzenPPKG Driver", false, "REVIEW", ActionKind.MoveFolderToRecycleBin,
+            "AMD Ryzen PPKG tuning-app installer leftover. Only relevant if this machine has an AMD Ryzen CPU - if it doesn't, this is safe to remove.",
+            LocalCheck: CheckAmdCpuPresent, CheckSubject: "an AMD CPU"),
+        new("WCH.CN", false, "REVIEW", ActionKind.MoveFolderToRecycleBin,
+            "CH340/CH341 USB-to-serial driver installer leftover, commonly used by Arduino clones and ESP32-style dev boards. Only relevant if you use that kind of hardware - if not, safe to remove.",
+            LocalCheck: CheckWchDriverRegistered, CheckSubject: "a CH340/CH341 driver"),
+
+        new("inetpub", false, "INFO", ActionKind.None,
+            "Possible active IIS web root. Deleting could take down a running website - verify no site is currently being served from here (check the IIS/W3SVC service) before touching it yourself. No delete action offered from inside this tool."),
+        new("flexlm", false, "INFO", ActionKind.None,
+            "Possible active license server directory. Deleting could break license validation for software depending on it, possibly on other machines - verify nothing is connected before touching it yourself. No delete action offered from inside this tool."),
+        new("vfcompat.dll", true, "INFO", ActionKind.SuggestCommand,
+            "Live Visual Studio Application Verifier/debugger component, misplaced at C:\\ root by a known, persistent Visual Studio installer bug - it belongs in C:\\Windows\\SysWOW64. Deleting it can break Application Verifier and corrupt Visual Studio's debugging pipeline. The correct fix is to move it, not delete it.",
+            "Move-Item \"C:\\vfcompat.dll\" \"C:\\Windows\\SysWOW64\\vfcompat.dll\""),
+        new("appverifUI.dll", true, "INFO", ActionKind.SuggestCommand,
+            "Live Visual Studio Application Verifier/debugger component, misplaced at C:\\ root by the same installer bug as vfcompat.dll. Move it instead of deleting it.",
+            "Move-Item \"C:\\appverifUI.dll\" \"C:\\Windows\\SysWOW64\\appverifUI.dll\""),
+    };
+
+    // rootOverride exists only so tests can point at a fake tree instead of the
+    // real C:\ - production callers pass neither.
+    public static List<CheckItem> SystemRootClutter(string? rootOverride = null, List<string>? warnings = null)
+    {
+        var items = new List<CheckItem>();
+        var root = rootOverride ?? @"C:\";
+
+        foreach (var entry in SystemRootAllowlist)
+        {
+            try
+            {
+                var path = System.IO.Path.Combine(root, entry.Name);
+                var exists = entry.IsFile ? File.Exists(path) : Directory.Exists(path);
+                if (!exists) continue;
+
+                var size = entry.IsFile ? SafeFileSize(path) : GetDirectorySize(path);
+                var reason = entry.LocalCheck != null && entry.CheckSubject != null
+                    ? AppendLocalCheckNote(entry.Reason, entry.CheckSubject, RunLocalCheck(entry.LocalCheck))
+                    : entry.Reason;
+
+                items.Add(new CheckItem(entry.Name, size, entry.Risk, path,
+                    Action: entry.Action, CommandSuggestion: entry.CommandSuggestion, Reason: reason));
+            }
+            catch (Exception ex) { warnings?.Add($"{entry.Name}: could not check ({ex.Message})"); }
+        }
+
+        return items;
+    }
+
+    // Wraps a LocalCheck delegate so a check's own failure can never propagate
+    // as an "Absent" (falsely strengthens a delete recommendation) - only the
+    // check itself decides Present/Absent, anything else collapses to Unknown.
+    static LocalCheckOutcome RunLocalCheck(Func<LocalCheckOutcome> check)
+    {
+        try { return check(); }
+        catch { return LocalCheckOutcome.Unknown; }
+    }
+
+    // Pure formatting, kept separate from the registry/process-based checks
+    // above so the three-outcome wording can be unit tested without depending
+    // on this machine's actual CPU vendor, BIOS manufacturer, or drivers.
+    public static string AppendLocalCheckNote(string baseReason, string subject, LocalCheckOutcome outcome) => outcome switch
+    {
+        LocalCheckOutcome.Absent => $"{baseReason} Local check: {subject} not detected on this machine - likely safe to remove.",
+        LocalCheckOutcome.Present => $"{baseReason} Local check: {subject} detected on this machine - may still be in use, verify before deleting.",
+        _ => $"{baseReason} Local check: could not confirm {subject} - verify manually before deleting.",
+    };
+
+    // Registry read rather than a WMI/CIM query - same information
+    // (CentralProcessor vendor string), no extra process spawn or WMI service
+    // dependency, consistent with this scanner's other reads.
+    static LocalCheckOutcome CheckAmdCpuPresent()
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
+            var vendor = key?.GetValue("VendorIdentifier") as string;
+            if (string.IsNullOrEmpty(vendor)) return LocalCheckOutcome.Unknown;
+            return vendor.Equals("AuthenticAMD", StringComparison.OrdinalIgnoreCase) ? LocalCheckOutcome.Present : LocalCheckOutcome.Absent;
+        }
+        catch { return LocalCheckOutcome.Unknown; }
+    }
+
+    // BIOS-reported system manufacturer - close enough to "is this HP hardware"
+    // without needing a WMI query; OEM BIOS strings are typically "HP" or
+    // "Hewlett-Packard".
+    static LocalCheckOutcome CheckHpHardwarePresent()
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\BIOS");
+            var manufacturer = key?.GetValue("SystemManufacturer") as string;
+            if (string.IsNullOrEmpty(manufacturer)) return LocalCheckOutcome.Unknown;
+            return manufacturer.Contains("HP", StringComparison.OrdinalIgnoreCase) ||
+                   manufacturer.Contains("Hewlett-Packard", StringComparison.OrdinalIgnoreCase)
+                ? LocalCheckOutcome.Present : LocalCheckOutcome.Absent;
+        }
+        catch { return LocalCheckOutcome.Unknown; }
+    }
+
+    // No registry-only equivalent for "is a CH340/CH341 driver currently
+    // registered" - shells out to PowerShell's Get-PnpDevice, same
+    // ProcessStartInfo shell-out pattern GetInstalledPackageFamilyNames already
+    // establishes below for "ask Windows for state" needs.
+    static LocalCheckOutcome CheckWchDriverRegistered()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("powershell",
+                "-NoProfile -Command \"(Get-PnpDevice | Where-Object { $_.FriendlyName -like '*CH340*' -or $_.FriendlyName -like '*CH341*' }).Count\"")
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute = false
+            };
+            using var proc = Process.Start(psi);
+            if (proc == null) return LocalCheckOutcome.Unknown;
+
+            var output = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit(10000); // PowerShell cold-spawn - same budget as GetInstalledPackageFamilyNames
+            if (proc.ExitCode != 0) return LocalCheckOutcome.Unknown;
+
+            return int.TryParse(output.Trim(), out var count)
+                ? (count > 0 ? LocalCheckOutcome.Present : LocalCheckOutcome.Absent)
+                : LocalCheckOutcome.Unknown;
+        }
+        catch { return LocalCheckOutcome.Unknown; }
+    }
+
     public static List<CheckItem> DownloadsTopFolders(int topN = 5, List<string>? warnings = null)
     {
         var items = new List<CheckItem>();
@@ -441,6 +600,64 @@ public static class Scanners
         return names;
     }
 
+    // TLD-style first segments that mark a reverse-domain folder name
+    // (com.vendor.app) - the identifier convention Tauri/Electron-style apps
+    // use for their per-user data under AppData\Roaming. Curated rather than
+    // "anything with dots" so vendor folders like "Microsoft" or versioned
+    // names like "Python 3.12" can never match.
+    static readonly string[] ReverseDomainTldPrefixes =
+    {
+        "com", "org", "net", "io", "dev", "app", "co", "me", "xyz",
+    };
+
+    public static bool IsReverseDomainName(string folderName)
+    {
+        var parts = folderName.Split('.');
+        if (parts.Length < 3) return false;
+        if (parts.Any(p => p.Length == 0)) return false;
+        return ReverseDomainTldPrefixes.Contains(parts[0], StringComparer.OrdinalIgnoreCase);
+    }
+
+    // Tier 3 (name heuristic only): a reverse-domain folder name says which app
+    // wrote it, not whether that app is dead - and unlike Local's caches,
+    // Roaming holds real app state (settings, local databases). So every hit is
+    // REVIEW + Recycle Bin, never SAFE and never a permanent delete. There's no
+    // install cross-check here: bundle IDs like com.vendor.app don't map
+    // reliably onto registry DisplayNames, and StalePackages's Get-AppxPackage
+    // trick only covers MSIX/Store apps - the reason text says so instead of
+    // pretending otherwise.
+    //
+    // rootOverride exists only so tests can point at a fake tree instead of the
+    // real %APPDATA% - production callers pass neither.
+    public static List<CheckItem> RoamingAppData(string? rootOverride = null, List<string>? warnings = null)
+    {
+        var items = new List<CheckItem>();
+        var root = rootOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (!Directory.Exists(root)) return items;
+
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(root))
+            {
+                var name = System.IO.Path.GetFileName(dir);
+                if (!IsReverseDomainName(name)) continue;
+
+                var size = GetDirectorySize(dir);
+                if (size == 0) continue;
+
+                DateTime lastWrite;
+                try { lastWrite = Directory.GetLastWriteTime(dir); }
+                catch { continue; }
+
+                items.Add(new CheckItem($"AppData\\Roaming\\{name}", size, "REVIEW", dir,
+                    Action: ActionKind.MoveFolderToRecycleBin,
+                    Reason: $"Reverse-domain folder name - the identifier pattern Tauri/Electron-style desktop apps use for per-user data. Last modified {lastWrite:yyyy-MM-dd}. May hold real app state (settings, local databases), not just regenerable cache - deleting resets that app if it's still installed. The name pattern is the only signal (no install check exists for this ID format), so confirm the app is dead/yours before removing. Recoverable from the Recycle Bin."));
+            }
+        }
+        catch (Exception ex) { warnings?.Add($"AppData\\Roaming: could not scan ({ex.Message})"); }
+        return items;
+    }
+
     public static List<CheckItem> InstalledAppsBySize(int topN = 10, List<string>? warnings = null)
     {
         var apps = new List<(string Name, long SizeBytes)>();
@@ -554,7 +771,7 @@ public static class Scanners
             var size = GetDirectorySize(dir);
             if (size > 0)
                 items.Add(new CheckItem($".claude\\{name} ({kind})", size, "REVIEW", dir,
-                    Action: ActionKind.MoveFolderToRecycleBin, Reason: claudeCacheReasons[name]));
+                    Action: ActionKind.MoveFolderToRecycleBin, Reason: AppendUncRecycleBinNote(claudeCacheReasons[name], dir)));
         }
 
         var projectsDir = System.IO.Path.Combine(root, "projects");
@@ -621,7 +838,7 @@ public static class Scanners
 
                         items.Add(new CheckItem(
                             $".claude\\projects\\{projectName}\\{System.IO.Path.GetFileName(jsonl)}",
-                            size, "REVIEW", jsonl, Action: ActionKind.MoveFileToRecycleBin, Reason: reason,
+                            size, "REVIEW", jsonl, Action: ActionKind.MoveFileToRecycleBin, Reason: AppendUncRecycleBinNote(reason, jsonl),
                             SecondaryPath: secondaryPath));
                     }
 
@@ -640,7 +857,9 @@ public static class Scanners
                         items.Add(new CheckItem(
                             $".claude\\projects\\{projectName}\\{sessionId} (orphaned subagent data)",
                             size, "SAFE", sessionDir, Action: ActionKind.MoveFolderToRecycleBin,
-                            Reason: "Subagent/tool-result data left behind after this session's conversation transcript was already deleted. No conversation exists to reference anymore - safe to remove."));
+                            Reason: AppendUncRecycleBinNote(
+                                "Subagent/tool-result data left behind after this session's conversation transcript was already deleted. No conversation exists to reference anymore - safe to remove.",
+                                sessionDir)));
                     }
                 }
             }
@@ -713,7 +932,7 @@ public static class Scanners
             var size = GetDirectorySize(dir);
             if (size > 0)
                 items.Add(new CheckItem($".codex\\{name} (cache)", size, "REVIEW", dir,
-                    Action: ActionKind.MoveFolderToRecycleBin, Reason: codexCacheReasons[name]));
+                    Action: ActionKind.MoveFolderToRecycleBin, Reason: AppendUncRecycleBinNote(codexCacheReasons[name], dir)));
         }
 
         var sessionsDir = System.IO.Path.Combine(root, "sessions");
@@ -739,7 +958,7 @@ public static class Scanners
 
                     items.Add(new CheckItem(
                         $".codex\\sessions\\{rel}",
-                        size, "REVIEW", jsonl, Action: ActionKind.MoveFileToRecycleBin, Reason: reason));
+                        size, "REVIEW", jsonl, Action: ActionKind.MoveFileToRecycleBin, Reason: AppendUncRecycleBinNote(reason, jsonl)));
                 }
             }
             catch (Exception ex) { warnings?.Add($".codex/sessions: could not scan ({ex.Message})"); }
@@ -959,22 +1178,37 @@ public static class Scanners
     // hit, used by both Wsl() and NativeBuildDirs(). pathForReason is the
     // path shown in the "couldn't confirm" REVIEW message, which differs
     // slightly between the two callers' label conventions.
+    // Recycle Bin doesn't exist for \\wsl.localhost\... (or any UNC) path -
+    // WindowsTrashProvider deletes those permanently and says so in its result
+    // message, but that's only visible *after* the user clicks Clean. This
+    // note puts the same fact in the Reason text (shown in the Details panel
+    // before they commit) for any item whose Action requests the Recycle Bin
+    // but whose path is actually a network/WSL location.
+    static string AppendUncRecycleBinNote(string reason, string path) =>
+        path.StartsWith(@"\\", StringComparison.Ordinal)
+            ? reason + " Note: this is a WSL path — the Recycle Bin doesn't support it, so this action permanently deletes and cannot be undone."
+            : reason;
+
     static CheckItem ClassifyBuildDir(string label, long size, string buildDir, string parentDir, string dirName, string pathForReason)
     {
         if (!HasProjectMarker(parentDir, dirName))
         {
             var markerNames = dirName == "node_modules" ? "package.json" : "Cargo.toml/pom.xml/build.sbt";
-            var reviewReason = $"Found at {pathForReason} with no {markerNames} next to it — couldn't confirm this is one of your projects. Check the path before deleting.";
-            return new CheckItem(label, size, "REVIEW", buildDir, Action: ActionKind.DeleteFolder, Reason: reviewReason);
+            var reviewReason = AppendUncRecycleBinNote(
+                $"Found at {pathForReason} with no {markerNames} next to it — couldn't confirm this is one of your projects. Check the path before deleting.",
+                buildDir);
+            return new CheckItem(label, size, "REVIEW", buildDir, Action: ActionKind.MoveFolderToRecycleBin, Reason: reviewReason);
         }
 
         var workspaceNote = dirName == "node_modules" && IsWorkspaceRoot(parentDir) ? WorkspaceRootNote : "";
 
         if (dirName == "node_modules" && !HasLockfile(parentDir))
         {
-            var lockfileReason = "package.json found but no lockfile (package-lock.json/pnpm-lock.yaml/yarn.lock) " +
-                "next to it — reinstall may not reproduce the exact same dependency versions." + workspaceNote;
-            return new CheckItem(label, size, "REVIEW", buildDir, Action: ActionKind.DeleteFolder, Reason: lockfileReason);
+            var lockfileReason = AppendUncRecycleBinNote(
+                "package.json found but no lockfile (package-lock.json/pnpm-lock.yaml/yarn.lock) " +
+                "next to it — reinstall may not reproduce the exact same dependency versions." + workspaceNote,
+                buildDir);
+            return new CheckItem(label, size, "REVIEW", buildDir, Action: ActionKind.MoveFolderToRecycleBin, Reason: lockfileReason);
         }
 
         var buildReason = (dirName == "node_modules"

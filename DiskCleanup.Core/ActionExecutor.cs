@@ -15,6 +15,7 @@ public static class ActionExecutor
             ActionKind.EmptyRecycleBin => EmptyRecycleBin(item),
             ActionKind.DeleteContents => DeleteContents(item),
             ActionKind.DeleteFolder => DeleteFolder(item),
+            ActionKind.DeleteFile => DeleteFile(item),
             ActionKind.MoveFolderToRecycleBin => MoveFolderToRecycleBin(item),
             ActionKind.MoveFileToRecycleBin => MoveFileToRecycleBin(item),
             ActionKind.SuggestCommand => new ActionResult(item, true, $"Suggested command (run yourself): {item.CommandSuggestion}"),
@@ -96,7 +97,10 @@ public static class ActionExecutor
     // failures collects which specific file/subfolder blocked deletion (e.g.
     // locked, access denied, too-long path) instead of losing that detail to
     // Directory.Delete's generic "directory not empty" once this returns.
-    static void SafeDeleteTree(string path, List<string>? failures = null)
+    //
+    // internal (not private): WindowsTrashProvider reuses this for its UNC
+    // permanent-delete fallback instead of duplicating the reparse-point guard.
+    internal static void SafeDeleteTree(string path, List<string>? failures = null)
     {
         var info = new DirectoryInfo(path);
         if (!info.Exists) return;
@@ -125,6 +129,23 @@ public static class ActionExecutor
         }
 
         Directory.Delete(path);
+    }
+
+    static ActionResult DeleteFile(CheckItem item)
+    {
+        if (item.Path == null || !File.Exists(item.Path))
+            return new ActionResult(item, false, "File not found.");
+
+        try
+        {
+            File.Delete(item.Path);
+            return new ActionResult(item, true, "File deleted.");
+        }
+        catch (Exception ex)
+        {
+            return new ActionResult(item, false,
+                $"Could not delete file. Blocked by: {ex.Message}. Run elevated: Remove-Item -Force \"{item.Path}\"");
+        }
     }
 
     static ActionResult MoveFolderToRecycleBin(CheckItem item)

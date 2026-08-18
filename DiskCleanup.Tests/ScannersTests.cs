@@ -577,4 +577,140 @@ public class ScannersTests
 
         Assert.Empty(items);
     }
+
+    static string CreateFakeSystemRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_SysRoot_" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+
+        File.WriteAllText(Path.Combine(root, "DumpStack.log"), "fake bug-check log");
+        File.WriteAllText(Path.Combine(root, "DumpStack.log.tmp"), "fake tmp log");
+
+        Directory.CreateDirectory(Path.Combine(root, "HP eSupport"));
+        File.WriteAllText(Path.Combine(root, "HP eSupport", "readme.txt"), "hp");
+        Directory.CreateDirectory(Path.Combine(root, "RyzenPPKG Driver"));
+        File.WriteAllText(Path.Combine(root, "RyzenPPKG Driver", "readme.txt"), "amd");
+        Directory.CreateDirectory(Path.Combine(root, "WCH.CN"));
+        File.WriteAllText(Path.Combine(root, "WCH.CN", "readme.txt"), "wch");
+
+        Directory.CreateDirectory(Path.Combine(root, "inetpub"));
+        Directory.CreateDirectory(Path.Combine(root, "flexlm"));
+
+        File.WriteAllText(Path.Combine(root, "vfcompat.dll"), "fake dll bytes");
+        File.WriteAllText(Path.Combine(root, "appverifUI.dll"), "fake dll bytes");
+
+        // Should never be matched - live Quartus install, not a clutter target.
+        Directory.CreateDirectory(Path.Combine(root, "intelFPGA_lite"));
+
+        return root;
+    }
+
+    [Fact]
+    public void SystemRootClutter_AllEntriesPresent_ClassifiesEachCorrectly()
+    {
+        var root = CreateFakeSystemRoot();
+        try
+        {
+            var items = Scanners.SystemRootClutter(rootOverride: root);
+
+            var dumpLog = Assert.Single(items, i => i.Label == "DumpStack.log");
+            Assert.Equal("SAFE", dumpLog.Risk);
+            Assert.Equal(ActionKind.DeleteFile, dumpLog.Action);
+
+            var dumpLogTmp = Assert.Single(items, i => i.Label == "DumpStack.log.tmp");
+            Assert.Equal("SAFE", dumpLogTmp.Risk);
+            Assert.Equal(ActionKind.DeleteFile, dumpLogTmp.Action);
+
+            var hp = Assert.Single(items, i => i.Label == "HP eSupport");
+            Assert.Equal("REVIEW", hp.Risk);
+            Assert.Equal(ActionKind.MoveFolderToRecycleBin, hp.Action);
+
+            var ryzen = Assert.Single(items, i => i.Label == "RyzenPPKG Driver");
+            Assert.Equal("REVIEW", ryzen.Risk);
+            Assert.Equal(ActionKind.MoveFolderToRecycleBin, ryzen.Action);
+
+            var wch = Assert.Single(items, i => i.Label == "WCH.CN");
+            Assert.Equal("REVIEW", wch.Risk);
+            Assert.Equal(ActionKind.MoveFolderToRecycleBin, wch.Action);
+
+            var inetpub = Assert.Single(items, i => i.Label == "inetpub");
+            Assert.Equal("INFO", inetpub.Risk);
+            Assert.Equal(ActionKind.None, inetpub.Action);
+
+            var flexlm = Assert.Single(items, i => i.Label == "flexlm");
+            Assert.Equal("INFO", flexlm.Risk);
+            Assert.Equal(ActionKind.None, flexlm.Action);
+
+            var vfcompat = Assert.Single(items, i => i.Label == "vfcompat.dll");
+            Assert.Equal("INFO", vfcompat.Risk);
+            Assert.Equal(ActionKind.SuggestCommand, vfcompat.Action);
+            Assert.Contains("SysWOW64", vfcompat.CommandSuggestion);
+
+            var appverif = Assert.Single(items, i => i.Label == "appverifUI.dll");
+            Assert.Equal("INFO", appverif.Risk);
+            Assert.Equal(ActionKind.SuggestCommand, appverif.Action);
+            Assert.Contains("SysWOW64", appverif.CommandSuggestion);
+
+            Assert.DoesNotContain(items, i => i.Label.Contains("intelFPGA", StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(9, items.Count);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void SystemRootClutter_NothingPresent_ReturnsEmpty()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_SysRootMissing_" + Guid.NewGuid());
+
+        var items = Scanners.SystemRootClutter(rootOverride: root);
+
+        Assert.Empty(items);
+    }
+
+    [Fact]
+    public void SystemRootClutter_EveryItemHasAReasonExplainingWhy()
+    {
+        var root = CreateFakeSystemRoot();
+        try
+        {
+            var items = Scanners.SystemRootClutter(rootOverride: root);
+            Assert.All(items, i => Assert.False(string.IsNullOrWhiteSpace(i.Reason)));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void SystemRootClutter_HardwareDependentItems_CarryALocalCheckNote()
+    {
+        var root = CreateFakeSystemRoot();
+        try
+        {
+            var items = Scanners.SystemRootClutter(rootOverride: root);
+
+            // Outcome depends on this test machine's real CPU/BIOS/drivers, so
+            // only the presence of the note (not which of the three outcomes)
+            // is asserted here - AppendLocalCheckNote below covers the wording
+            // for all three outcomes without depending on real hardware.
+            Assert.Contains("Local check:", items.Single(i => i.Label == "HP eSupport").Reason);
+            Assert.Contains("Local check:", items.Single(i => i.Label == "RyzenPPKG Driver").Reason);
+            Assert.Contains("Local check:", items.Single(i => i.Label == "WCH.CN").Reason);
+
+            // SAFE/INFO entries have no hardware dependency - no check, no note.
+            Assert.DoesNotContain("Local check:", items.Single(i => i.Label == "DumpStack.log").Reason);
+            Assert.DoesNotContain("Local check:", items.Single(i => i.Label == "inetpub").Reason);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData(Scanners.LocalCheckOutcome.Present, "detected on this machine - may still be in use")]
+    [InlineData(Scanners.LocalCheckOutcome.Absent, "not detected on this machine - likely safe to remove")]
+    [InlineData(Scanners.LocalCheckOutcome.Unknown, "could not confirm")]
+    public void AppendLocalCheckNote_EachOutcome_ProducesExpectedWording(Scanners.LocalCheckOutcome outcome, string expectedSubstring)
+    {
+        var result = Scanners.AppendLocalCheckNote("Base reason.", "an AMD CPU", outcome);
+
+        Assert.StartsWith("Base reason.", result);
+        Assert.Contains(expectedSubstring, result);
+    }
 }
