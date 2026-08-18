@@ -51,11 +51,14 @@
         </DataGrid>
 
         <!-- Details: full path + plain-language explanation for the selected row,
-             since grid cells clip long labels with no way to see the rest. -->
+             since grid cells clip long labels with no way to see the rest.
+             TextBox (not TextBlock) so the text is mouse-selectable/copyable -
+             WPF TextBlock text can't be drag-selected at all. -->
         <Border Grid.Row="2" BorderBrush="#CCCCCC" BorderThickness="1" Margin="0,10,0,0" Padding="8" Background="#FAFAFA">
             <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="100">
-                <TextBlock x:Name="DetailsText" TextWrapping="Wrap"
-                           Text="Select an item to see its full path and why it's categorized that way."/>
+                <TextBox x:Name="DetailsText" TextWrapping="Wrap" IsReadOnly="True"
+                         BorderThickness="0" Background="Transparent"
+                         Text="Select an item to see its full path and why it's categorized that way."/>
             </ScrollViewer>
         </Border>
 

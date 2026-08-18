@@ -39,8 +39,10 @@ public partial class MainWindow : Window
             result.AddRange(Scanners.NativeBuildDirs(warnings));
             result.AddRange(Scanners.Docker(warnings));
             result.AddRange(Scanners.DockerVhdxBloat(warnings: warnings));
+            result.AddRange(Scanners.SystemRootClutter(warnings: warnings));
             result.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));
             result.AddRange(Scanners.StalePackages(warnings: warnings));
+            result.AddRange(Scanners.RoamingAppData(warnings: warnings));
             result.AddRange(Scanners.AiFolders(warnings));
             result.AddRange(Scanners.InstalledAppsBySize(warnings: warnings));
             result.AddRange(Scanners.PersonalFolders(warnings: warnings));
