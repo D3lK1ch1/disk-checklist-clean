@@ -1,24 +1,26 @@
 using DiskCleanup.Core;
 
+ActionExecutor.TrashProvider = new WindowsTrashProvider();
+
 var items = new List<CheckItem>();
 var warnings = new List<string>();
 
-items.AddRange(Scanners.RecycleBin(warnings));
+items.AddRange(WindowsScanners.RecycleBin(warnings));
 items.AddRange(Scanners.TempFolders());
-items.AddRange(Scanners.WindowsUpdateCache());
-items.AddRange(Scanners.WindowsTempFolder(warnings));
+items.AddRange(WindowsScanners.WindowsUpdateCache());
+items.AddRange(WindowsScanners.WindowsTempFolder(warnings));
 items.AddRange(Scanners.VsCodeCache(warnings));
 items.AddRange(Scanners.DevPackageCaches(warnings));
-items.AddRange(Scanners.Wsl(warnings));
+items.AddRange(WindowsScanners.Wsl(warnings));
 items.AddRange(Scanners.NativeBuildDirs(warnings));
 items.AddRange(Scanners.Docker(warnings));
-items.AddRange(Scanners.DockerVhdxBloat(warnings: warnings));
-items.AddRange(Scanners.SystemRootClutter(warnings: warnings));
+items.AddRange(WindowsScanners.DockerVhdxBloat(warnings: warnings));
+items.AddRange(WindowsScanners.SystemRootClutter(warnings: warnings));
 items.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));
-items.AddRange(Scanners.StalePackages(warnings: warnings));
-items.AddRange(Scanners.RoamingAppData(warnings: warnings));
+items.AddRange(WindowsScanners.StalePackages(warnings: warnings));
+items.AddRange(WindowsScanners.RoamingAppData(warnings: warnings));
 items.AddRange(Scanners.AiFolders(warnings));
-items.AddRange(Scanners.InstalledAppsBySize(warnings: warnings));
+items.AddRange(WindowsScanners.InstalledAppsBySize(warnings: warnings));
 items.AddRange(Scanners.PersonalFolders(warnings: warnings));
 
 Console.WriteLine("disk-cleanup — scan results");

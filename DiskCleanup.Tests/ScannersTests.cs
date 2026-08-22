@@ -281,7 +281,7 @@ public class ScannersTests
     [InlineData("45442stefano64.GPXviewerandrecorder_bszswgksnzmf2", false)]
     public void IsSharedRuntimePackage_MatchesKnownFrameworkPrefixesOnly(string folderName, bool expected)
     {
-        Assert.Equal(expected, Scanners.IsSharedRuntimePackage(folderName));
+        Assert.Equal(expected, WindowsScanners.IsSharedRuntimePackage(folderName));
     }
 
     [Fact]
@@ -317,7 +317,7 @@ public class ScannersTests
         File.WriteAllText(Path.Combine(vscodeServer, "index.js"), "// bundled extension code");
         try
         {
-            var scan = Scanners.FindBuildDirs(root);
+            var scan = WindowsScanners.FindBuildDirs(root);
 
             Assert.Contains(scan.ExcludedAppDataDirs, p => p.EndsWith(".vscode-server"));
             // Never recursed into it, so the node_modules inside must not surface as a build dir.
@@ -334,7 +334,7 @@ public class ScannersTests
         Directory.CreateDirectory(buriedInCache);
         try
         {
-            var scan = Scanners.FindBuildDirs(root);
+            var scan = WindowsScanners.FindBuildDirs(root);
 
             Assert.DoesNotContain(scan.BuildDirs, p => p.Contains("node_modules"));
             Assert.DoesNotContain(scan.ExcludedAppDataDirs, p => p.EndsWith(".cache"));
@@ -352,7 +352,7 @@ public class ScannersTests
         Directory.CreateDirectory(Path.Combine(rustProject, "target"));
         try
         {
-            var scan = Scanners.FindBuildDirs(root);
+            var scan = WindowsScanners.FindBuildDirs(root);
 
             Assert.Contains(scan.BuildDirs, p => p == Path.Combine(nodeProject, "node_modules"));
             Assert.Contains(scan.BuildDirs, p => p == Path.Combine(rustProject, "target"));
@@ -611,7 +611,7 @@ public class ScannersTests
         var root = CreateFakeSystemRoot();
         try
         {
-            var items = Scanners.SystemRootClutter(rootOverride: root);
+            var items = WindowsScanners.SystemRootClutter(rootOverride: root);
 
             var dumpLog = Assert.Single(items, i => i.Label == "DumpStack.log");
             Assert.Equal("SAFE", dumpLog.Risk);
@@ -662,7 +662,7 @@ public class ScannersTests
     {
         var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_SysRootMissing_" + Guid.NewGuid());
 
-        var items = Scanners.SystemRootClutter(rootOverride: root);
+        var items = WindowsScanners.SystemRootClutter(rootOverride: root);
 
         Assert.Empty(items);
     }
@@ -673,7 +673,7 @@ public class ScannersTests
         var root = CreateFakeSystemRoot();
         try
         {
-            var items = Scanners.SystemRootClutter(rootOverride: root);
+            var items = WindowsScanners.SystemRootClutter(rootOverride: root);
             Assert.All(items, i => Assert.False(string.IsNullOrWhiteSpace(i.Reason)));
         }
         finally { Directory.Delete(root, recursive: true); }
@@ -685,7 +685,7 @@ public class ScannersTests
         var root = CreateFakeSystemRoot();
         try
         {
-            var items = Scanners.SystemRootClutter(rootOverride: root);
+            var items = WindowsScanners.SystemRootClutter(rootOverride: root);
 
             // Outcome depends on this test machine's real CPU/BIOS/drivers, so
             // only the presence of the note (not which of the three outcomes)
@@ -703,12 +703,12 @@ public class ScannersTests
     }
 
     [Theory]
-    [InlineData(Scanners.LocalCheckOutcome.Present, "detected on this machine - may still be in use")]
-    [InlineData(Scanners.LocalCheckOutcome.Absent, "not detected on this machine - likely safe to remove")]
-    [InlineData(Scanners.LocalCheckOutcome.Unknown, "could not confirm")]
-    public void AppendLocalCheckNote_EachOutcome_ProducesExpectedWording(Scanners.LocalCheckOutcome outcome, string expectedSubstring)
+    [InlineData(WindowsScanners.LocalCheckOutcome.Present, "detected on this machine - may still be in use")]
+    [InlineData(WindowsScanners.LocalCheckOutcome.Absent, "not detected on this machine - likely safe to remove")]
+    [InlineData(WindowsScanners.LocalCheckOutcome.Unknown, "could not confirm")]
+    public void AppendLocalCheckNote_EachOutcome_ProducesExpectedWording(WindowsScanners.LocalCheckOutcome outcome, string expectedSubstring)
     {
-        var result = Scanners.AppendLocalCheckNote("Base reason.", "an AMD CPU", outcome);
+        var result = WindowsScanners.AppendLocalCheckNote("Base reason.", "an AMD CPU", outcome);
 
         Assert.StartsWith("Base reason.", result);
         Assert.Contains(expectedSubstring, result);
