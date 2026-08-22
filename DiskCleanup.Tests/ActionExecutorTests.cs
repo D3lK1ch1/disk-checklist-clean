@@ -7,6 +7,15 @@ namespace DiskCleanup.Tests;
 // never on real user paths like Downloads, AppData, or the Recycle Bin.
 public class ActionExecutorTests
 {
+    // TrashProvider is no longer self-initializing (Core can't reference
+    // WindowsTrashProvider once it moves to DiskCleanup.Core.Windows), so the
+    // tests that exercise MoveFolderToRecycleBin/MoveFileToRecycleBin need it
+    // set explicitly, same as a real entry point (Program.cs, App.xaml.cs) does.
+    static ActionExecutorTests()
+    {
+        ActionExecutor.TrashProvider = new WindowsTrashProvider();
+    }
+
     static string CreateTempDirWithContents()
     {
         var dir = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_" + Guid.NewGuid());

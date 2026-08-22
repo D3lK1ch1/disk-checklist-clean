@@ -5,8 +5,17 @@ public record ActionResult(CheckItem Item, bool Success, string Message);
 public static class ActionExecutor
 {
     // Platform seam (see ITrashProvider) - swap this to target Linux/Mac later
-    // without touching any of the call sites below.
-    public static ITrashProvider TrashProvider { get; set; } = new WindowsTrashProvider();
+    // without touching any of the call sites below. No default: Core can't
+    // reference a platform-specific implementation (WindowsTrashProvider lives
+    // in DiskCleanup.Core.Windows), so each entry point (Program.cs, App.xaml.cs)
+    // must set this once at startup before any trash action runs.
+    public static ITrashProvider? TrashProvider { get; set; }
+
+    static ITrashProvider RequireTrashProvider() => TrashProvider
+        ?? throw new InvalidOperationException(
+            "ActionExecutor.TrashProvider is not set. The platform entry point must assign it " +
+            "(e.g. ActionExecutor.TrashProvider = new WindowsTrashProvider();) before executing " +
+            "EmptyRecycleBin/MoveFolderToRecycleBin/MoveFileToRecycleBin actions.");
 
     public static ActionResult Execute(CheckItem item)
     {
@@ -25,7 +34,7 @@ public static class ActionExecutor
 
     static ActionResult EmptyRecycleBin(CheckItem item)
     {
-        var result = TrashProvider.EmptyTrash();
+        var result = RequireTrashProvider().EmptyTrash();
         return new ActionResult(item, result.Success, result.Message);
     }
 
@@ -166,12 +175,13 @@ public static class ActionExecutor
     // check makes sense first; the actual move goes through TrashProvider.
     static ActionResult MoveToRecycleBin(CheckItem item)
     {
-        var result = TrashProvider.MoveToTrash(item.Path!);
+        var trashProvider = RequireTrashProvider();
+        var result = trashProvider.MoveToTrash(item.Path!);
         var message = result.Success ? result.Message + WslCompactionNote(item.Path) : result.Message;
 
         if (item.SecondaryPath != null && Directory.Exists(item.SecondaryPath))
         {
-            var secondary = TrashProvider.MoveToTrash(item.SecondaryPath);
+            var secondary = trashProvider.MoveToTrash(item.SecondaryPath);
             message += secondary.Success
                 ? " Paired folder moved to Recycle Bin too."
                 : $" Could not move paired folder \"{item.SecondaryPath}\": {secondary.Message}";

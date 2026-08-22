@@ -1,6 +1,7 @@
 ﻿using System.Configuration;
 using System.Data;
 using System.Windows;
+using DiskCleanup.Core;
 
 namespace DiskCleanup.Wpf;
 
@@ -9,5 +10,10 @@ namespace DiskCleanup.Wpf;
 /// </summary>
 public partial class App : Application
 {
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+        ActionExecutor.TrashProvider = new WindowsTrashProvider();
+    }
 }
 
