@@ -1,5 +1,7 @@
 <Solution>
+  <Project Path="DiskCleanup.Avalonia/DiskCleanup.Avalonia.csproj" />
   <Project Path="DiskCleanup.Core/DiskCleanup.Core.csproj" />
+  <Project Path="DiskCleanup.Core.Mac/DiskCleanup.Core.Mac.csproj" />
   <Project Path="DiskCleanup.Core.Windows/DiskCleanup.Core.Windows.csproj" />
   <Project Path="DiskCleanup.Tests/DiskCleanup.Tests.csproj" />
   <Project Path="DiskCleanup.Wpf/DiskCleanup.Wpf.csproj" />
