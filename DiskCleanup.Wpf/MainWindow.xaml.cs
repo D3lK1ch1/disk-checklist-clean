@@ -29,22 +29,22 @@ public partial class MainWindow : Window
         var items = await Task.Run(() =>
         {
             var result = new List<CheckItem>();
-            result.AddRange(Scanners.RecycleBin(warnings));
+            result.AddRange(WindowsScanners.RecycleBin(warnings));
             result.AddRange(Scanners.TempFolders());
-            result.AddRange(Scanners.WindowsUpdateCache());
-            result.AddRange(Scanners.WindowsTempFolder(warnings));
+            result.AddRange(WindowsScanners.WindowsUpdateCache());
+            result.AddRange(WindowsScanners.WindowsTempFolder(warnings));
             result.AddRange(Scanners.VsCodeCache(warnings));
             result.AddRange(Scanners.DevPackageCaches(warnings));
-            result.AddRange(Scanners.Wsl(warnings));
+            result.AddRange(WindowsScanners.Wsl(warnings));
             result.AddRange(Scanners.NativeBuildDirs(warnings));
             result.AddRange(Scanners.Docker(warnings));
-            result.AddRange(Scanners.DockerVhdxBloat(warnings: warnings));
-            result.AddRange(Scanners.SystemRootClutter(warnings: warnings));
+            result.AddRange(WindowsScanners.DockerVhdxBloat(warnings: warnings));
+            result.AddRange(WindowsScanners.SystemRootClutter(warnings: warnings));
             result.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));
-            result.AddRange(Scanners.StalePackages(warnings: warnings));
-            result.AddRange(Scanners.RoamingAppData(warnings: warnings));
+            result.AddRange(WindowsScanners.StalePackages(warnings: warnings));
+            result.AddRange(WindowsScanners.RoamingAppData(warnings: warnings));
             result.AddRange(Scanners.AiFolders(warnings));
-            result.AddRange(Scanners.InstalledAppsBySize(warnings: warnings));
+            result.AddRange(WindowsScanners.InstalledAppsBySize(warnings: warnings));
             result.AddRange(Scanners.PersonalFolders(warnings: warnings));
             return result;
         });

@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DiskCleanup.Core\DiskCleanup.Core.csproj" />
+    <ProjectReference Include="..\DiskCleanup.Core.Windows\DiskCleanup.Core.Windows.csproj" />
+    <ProjectReference Include="..\DiskCleanup.Core.Mac\DiskCleanup.Core.Mac.csproj" />
   </ItemGroup>
 
 </Project>
