@@ -18,4 +18,9 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\DiskCleanup.Core\DiskCleanup.Core.csproj" />
+    <ProjectReference Include="..\DiskCleanup.Core.Windows\DiskCleanup.Core.Windows.csproj" />
+  </ItemGroup>
+
 </Project>

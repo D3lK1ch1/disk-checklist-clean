@@ -3,6 +3,11 @@
         x:Class="DiskCleanup.Avalonia.MainWindow"
         Title="disk-cleanup"
         Width="900" Height="600">
-  <TextBlock Text="disk-cleanup (Avalonia scaffold — sub-unit 1, no scanning yet)"
-             Margin="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+  <DockPanel Margin="12">
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
+      <Button x:Name="ScanButton" Content="Scan" Click="ScanButton_Click" />
+      <TextBlock x:Name="StatusText" Text="Not scanned yet." VerticalAlignment="Center" />
+    </StackPanel>
+    <ListBox x:Name="ItemsList" />
+  </DockPanel>
 </Window>
