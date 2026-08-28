@@ -161,12 +161,14 @@ public static class Scanners
         {
             var entries = Directory.EnumerateFileSystemEntries(downloads)
                 .Where(p => selfRoot == null || !string.Equals(p, selfRoot, StringComparison.OrdinalIgnoreCase))
-                .Select(p => (Path: p, Size: Directory.Exists(p) ? GetDirectorySize(p) : SafeFileSize(p)))
+                .Select(p => (Path: p, IsDir: Directory.Exists(p)))
+                .Select(x => (x.Path, x.IsDir, Size: x.IsDir ? GetDirectorySize(x.Path) : SafeFileSize(x.Path)))
                 .OrderByDescending(x => x.Size)
                 .Take(topN);
 
-            foreach (var (path, size) in entries)
-                items.Add(new CheckItem($"Downloads\\{System.IO.Path.GetFileName(path)}", size, "REVIEW", path, Action: ActionKind.MoveFolderToRecycleBin));
+            foreach (var (path, isDir, size) in entries)
+                items.Add(new CheckItem($"Downloads\\{System.IO.Path.GetFileName(path)}", size, "REVIEW", path,
+                    Action: isDir ? ActionKind.MoveFolderToRecycleBin : ActionKind.MoveFileToRecycleBin));
         }
         catch (Exception ex) { warnings?.Add($"Downloads: could not scan ({ex.Message})"); }
         return items;
@@ -207,15 +209,16 @@ public static class Scanners
             try
             {
                 var entries = Directory.EnumerateFileSystemEntries(folderPath)
-                    .Select(p => (Path: p, Size: Directory.Exists(p) ? GetDirectorySize(p) : SafeFileSize(p)))
+                    .Select(p => (Path: p, IsDir: Directory.Exists(p)))
+                    .Select(x => (x.Path, x.IsDir, Size: x.IsDir ? GetDirectorySize(x.Path) : SafeFileSize(x.Path)))
                     .OrderByDescending(x => x.Size)
                     .Take(topN);
 
-                foreach (var (path, size) in entries)
+                foreach (var (path, isDir, size) in entries)
                     items.Add(new CheckItem(
                         $"{folderName}\\{System.IO.Path.GetFileName(path)}",
                         size, "REVIEW", path,
-                        Action: ActionKind.MoveFolderToRecycleBin,
+                        Action: isDir ? ActionKind.MoveFolderToRecycleBin : ActionKind.MoveFileToRecycleBin,
                         Reason: $"One of your largest items in {folderName}. Moving to Recycle Bin is recoverable."));
             }
             catch (Exception ex) { warnings?.Add($"{folderName}: could not scan ({ex.Message})"); }
