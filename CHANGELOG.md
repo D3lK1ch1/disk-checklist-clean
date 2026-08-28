@@ -1,6 +1,38 @@
 # Changelog
 
-## [0.0.2] - 2026-08-18 (drafted, not yet tagged/released)
+## Session 2026-08-28
+
+### Fixed
+- **`PersonalFolders()`/`DownloadsTopFolders()` (`Scanners.cs`) reported "Path not found" for
+  any top-level entry that was a file, not a folder.** Both scanners enumerate
+  `Directory.EnumerateFileSystemEntries` (files and folders mixed) but hardcoded every entry's
+  action to `ActionKind.MoveFolderToRecycleBin`, whose existence guard checks
+  `Directory.Exists` — always `false` for a file path. Found via a real WPF run: a REVIEW row
+  for a file directly under OneDrive-redirected `Documents` failed to clean with "Path not
+  found" even though the file was genuinely still there, untouched. Fixed by picking
+  `MoveFileToRecycleBin` vs `MoveFolderToRecycleBin` per entry based on `Directory.Exists`
+  instead of assuming folder. Affects both WPF and the in-progress Avalonia port equally,
+  since both call the same Core scanners.
+- **Avalonia app crashed on startup before any window appeared.** `MainWindow.axaml`'s
+  `RiskFilterCombo` set `SelectedIndex="0"` directly in XAML, which fires `SelectionChanged`
+  during `InitializeComponent()` — before `ItemsList` (declared later in the same file) is
+  constructed. The handler's `ApplyFilter()` dereferenced `ItemsList` and threw
+  `NullReferenceException`, so `dotnet run` returned to the prompt immediately with no visible
+  window and no printed error (the exception was only visible running `dotnet run` directly,
+  not backgrounded). Fixed by removing `SelectedIndex` from XAML and setting it in the
+  `MainWindow` constructor after `InitializeComponent()`, once every named control exists.
+
+### Known gaps
+- Both fixes verified via `dotnet build` (0 warnings, 0 errors) and `dotnet test` (74 passed,
+  0 failed) only as of this entry — live re-verification (relaunch `DiskCleanup.Avalonia` and
+  confirm the window opens and the filter/details panel work; relaunch WPF and confirm the
+  OneDrive `Documents` file now actually moves to Recycle Bin) not yet done this session.
+
+### Verification
+- `dotnet build` (solution-wide) — 0 warnings, 0 errors.
+- `dotnet test` — 74 passed, 0 failed, 0 skipped.
+
+## Session 2026-08-18 
 
 ### Added
 - `RoamingAppData()` scanner (`Scanners.cs`) — flags top-level `%APPDATA%` folders whose
