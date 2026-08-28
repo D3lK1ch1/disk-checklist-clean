@@ -3,11 +3,49 @@
         x:Class="DiskCleanup.Avalonia.MainWindow"
         Title="disk-cleanup"
         Width="900" Height="600">
-  <DockPanel Margin="12">
-    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
+  <Grid Margin="10">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="120" />
+    </Grid.RowDefinitions>
+
+    <!-- Toolbar -->
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,10">
       <Button x:Name="ScanButton" Content="Scan" Click="ScanButton_Click" />
-      <TextBlock x:Name="StatusText" Text="Not scanned yet." VerticalAlignment="Center" />
+      <TextBlock Text="Filter by risk:" Margin="12,0,0,0" VerticalAlignment="Center" />
+      <ComboBox x:Name="RiskFilterCombo" Width="120"
+                SelectionChanged="RiskFilterCombo_SelectionChanged">
+        <ComboBoxItem Content="All" />
+        <ComboBoxItem Content="SAFE" />
+        <ComboBoxItem Content="REVIEW" />
+        <ComboBoxItem Content="INFO" />
+      </ComboBox>
+      <TextBlock x:Name="StatusText" Text="Not scanned yet." Margin="12,0,0,0" VerticalAlignment="Center" />
     </StackPanel>
-    <ListBox x:Name="ItemsList" />
-  </DockPanel>
+
+    <!-- Results: plain ListBox for now - DataGrid + row-selection checkboxes land in sub-unit 4 -->
+    <ListBox x:Name="ItemsList" Grid.Row="1" SelectionChanged="ItemsList_SelectionChanged" />
+
+    <!-- Details: full path + Reason for the selected row, same purpose as WPF's DetailsText -->
+    <Border Grid.Row="2" BorderThickness="1" Margin="0,10,0,0" Padding="8">
+      <ScrollViewer MaxHeight="100">
+        <TextBox x:Name="DetailsText" TextWrapping="Wrap" IsReadOnly="True"
+                 BorderThickness="0" Background="Transparent"
+                 Text="Select an item to see its full path and why it's categorized that way." />
+      </ScrollViewer>
+    </Border>
+
+    <!-- Action bar: Select all SAFE / Clear selection / Clean Selected land with the
+         DataGrid in sub-unit 4 - they need real per-row selection state, not this list. -->
+    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,10">
+      <TextBlock x:Name="FreeSpaceText" VerticalAlignment="Center" />
+    </StackPanel>
+
+    <!-- Log / warnings -->
+    <TextBox x:Name="LogBox" Grid.Row="4" IsReadOnly="True" TextWrapping="Wrap"
+             FontFamily="Consolas" AcceptsReturn="True" />
+  </Grid>
 </Window>
