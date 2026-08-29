@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Logging;
 
 namespace DiskCleanup.Avalonia;
 
@@ -14,5 +15,5 @@ class Program
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()
             .UsePlatformDetect()
-            .LogToTrace();
+            .LogToTextWriter(Console.Out, LogEventLevel.Warning);
 }

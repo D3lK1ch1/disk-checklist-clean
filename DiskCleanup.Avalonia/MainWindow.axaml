@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:DiskCleanup.Avalonia"
         x:Class="DiskCleanup.Avalonia.MainWindow"
         Title="disk-cleanup"
         Width="900" Height="600">
@@ -26,8 +27,28 @@
       <TextBlock x:Name="StatusText" Text="Not scanned yet." Margin="12,0,0,0" VerticalAlignment="Center" />
     </StackPanel>
 
-    <!-- Results: plain ListBox for now - DataGrid + row-selection checkboxes land in sub-unit 4 -->
-    <ListBox x:Name="ItemsList" Grid.Row="1" SelectionChanged="ItemsList_SelectionChanged" />
+    <!-- Results grid: checkbox column drives real per-row selection state (CheckItemViewModel.IsSelected) -->
+    <DataGrid x:Name="ItemsGrid" Grid.Row="1" AutoGenerateColumns="False"
+              IsReadOnly="False" SelectionMode="Extended" RowHeight="28"
+              x:DataType="local:CheckItemViewModel"
+              SelectionChanged="ItemsGrid_SelectionChanged">
+      <DataGrid.Columns>
+        <DataGridTemplateColumn Header="" Width="40">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate x:DataType="local:CheckItemViewModel">
+              <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}"
+                        IsEnabled="{Binding CanSelect}"
+                        HorizontalAlignment="Center"
+                        Click="ItemCheckBox_Click" />
+            </DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+        <DataGridTextColumn Header="Item" Binding="{Binding Label}" Width="*" IsReadOnly="True" />
+        <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="100" IsReadOnly="True" />
+        <DataGridTextColumn Header="Risk" Binding="{Binding Risk}" Width="90" IsReadOnly="True" />
+        <DataGridTextColumn Header="Action" Binding="{Binding ActionDescription}" Width="130" IsReadOnly="True" />
+      </DataGrid.Columns>
+    </DataGrid>
 
     <!-- Details: full path + Reason for the selected row, same purpose as WPF's DetailsText -->
     <Border Grid.Row="2" BorderThickness="1" Margin="0,10,0,0" Padding="8">
@@ -38,10 +59,11 @@
       </ScrollViewer>
     </Border>
 
-    <!-- Action bar: Select all SAFE / Clear selection / Clean Selected land with the
-         DataGrid in sub-unit 4 - they need real per-row selection state, not this list. -->
-    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,10">
-      <TextBlock x:Name="FreeSpaceText" VerticalAlignment="Center" />
+    <!-- Action bar: Clean Selected lands in sub-unit 5 with the confirm dialog -->
+    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,10,0,10">
+      <Button x:Name="SelectAllSafeButton" Content="Select all SAFE" Click="SelectAllSafeButton_Click" />
+      <Button x:Name="ClearSelectionButton" Content="Clear selection" Click="ClearSelectionButton_Click" />
+      <TextBlock x:Name="FreeSpaceText" Margin="12,0,0,0" VerticalAlignment="Center" />
     </StackPanel>
 
     <!-- Log / warnings -->

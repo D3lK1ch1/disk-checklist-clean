@@ -6,14 +6,7 @@ namespace DiskCleanup.Avalonia;
 
 public partial class MainWindow : Window
 {
-    // Wraps a CheckItem so the plain ListBox (no DataTemplate yet) can display it via
-    // ToString() while still letting SelectionChanged get back the underlying item.
-    private record ScanRow(CheckItem Item)
-    {
-        public override string ToString() => $"{Item.Label} — {Item.FormattedSize} — {Item.Risk}";
-    }
-
-    private List<CheckItem> _allItems = new();
+    private List<CheckItemViewModel> _allItems = new();
 
     public MainWindow()
     {
@@ -52,7 +45,7 @@ public partial class MainWindow : Window
             return result;
         });
 
-        _allItems = items;
+        _allItems = items.Select(i => new CheckItemViewModel(i)).ToList();
         ApplyFilter();
         UpdateFreeSpaceText();
 
@@ -67,27 +60,53 @@ public partial class MainWindow : Window
 
     private void RiskFilterCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e) => ApplyFilter();
 
-    private void ItemsList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    private void ItemsGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (ItemsList.SelectedItem is not ScanRow row)
+        if (ItemsGrid.SelectedItem is not CheckItemViewModel vm)
         {
             DetailsText.Text = "Select an item to see its full path and why it's categorized that way.";
             return;
         }
 
-        var details = row.Item.Label;
-        if (!string.IsNullOrWhiteSpace(row.Item.Path))
-            details += $"\n\nFull path: {row.Item.Path}";
-        if (!string.IsNullOrWhiteSpace(row.Item.Reason))
-            details += $"\n\n{row.Item.Reason}";
+        var details = vm.Label;
+        if (!string.IsNullOrWhiteSpace(vm.Item.Path))
+            details += $"\n\nFull path: {vm.Item.Path}";
+        if (!string.IsNullOrWhiteSpace(vm.Reason))
+            details += $"\n\n{vm.Reason}";
         DetailsText.Text = details;
     }
 
     private void ApplyFilter()
     {
         var selected = (RiskFilterCombo.SelectedItem as ComboBoxItem)?.Content as string ?? "All";
-        var filtered = selected == "All" ? _allItems : _allItems.Where(i => i.Risk == selected);
-        ItemsList.ItemsSource = filtered.Select(i => new ScanRow(i)).ToList();
+        var filtered = selected == "All" ? _allItems : _allItems.Where(vm => vm.Risk == selected);
+
+        // Reassigning ItemsSource (instead of mutating a persistent ObservableCollection in
+        // place) forces the DataGrid to fully rebind every call - mutating in place left the
+        // grid blank after the very first Scan (empty-to-populated transition never rendered,
+        // confirmed by a rescan working every time after that).
+        ItemsGrid.ItemsSource = filtered.ToList();
+    }
+
+    private void ItemCheckBox_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { DataContext: CheckItemViewModel vm } cb)
+            vm.IsSelected = cb.IsChecked == true;
+    }
+
+    private void SelectAllSafeButton_Click(object? sender, RoutedEventArgs e)
+    {
+        foreach (var vm in _allItems)
+        {
+            if (vm.Risk == "SAFE" && vm.CanSelect)
+                vm.IsSelected = true;
+        }
+    }
+
+    private void ClearSelectionButton_Click(object? sender, RoutedEventArgs e)
+    {
+        foreach (var vm in _allItems)
+            vm.IsSelected = false;
     }
 
     private void UpdateFreeSpaceText()
