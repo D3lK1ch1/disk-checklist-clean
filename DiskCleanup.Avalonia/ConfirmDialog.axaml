@@ -1,0 +1,17 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DiskCleanup.Avalonia.ConfirmDialog"
+        Title="Confirm cleanup"
+        Width="480" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="16" Spacing="16">
+    <ScrollViewer MaxHeight="300">
+      <TextBlock x:Name="MessageText" TextWrapping="Wrap" />
+    </ScrollViewer>
+    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <Button x:Name="YesButton" Content="Yes" Click="YesButton_Click" />
+      <Button x:Name="NoButton" Content="No" Click="NoButton_Click" />
+    </StackPanel>
+  </StackPanel>
+</Window>

@@ -109,6 +109,66 @@ public partial class MainWindow : Window
             vm.IsSelected = false;
     }
 
+    private async void CleanButton_Click(object? sender, RoutedEventArgs e)
+    {
+        // No ItemsGrid.CommitEdit() here (unlike WPF) - Avalonia's DataGrid has no such
+        // method, and none is needed: ItemCheckBox_Click already writes vm.IsSelected
+        // directly and synchronously, not through a deferred row/cell edit commit.
+        var selected = _allItems.Where(vm => vm.IsSelected && vm.CanSelect).ToList();
+        if (selected.Count == 0)
+        {
+            StatusText.Text = "Nothing selected.";
+            return;
+        }
+
+        var message = "The following items will be processed:\n\n" +
+            string.Join("\n", selected.Select(vm => $"- {vm.Label} ({vm.Size}, {vm.Risk})")) +
+            "\n\nProceed?";
+
+        var confirmed = await new ConfirmDialog(message).ShowDialog<bool>(this);
+        if (!confirmed)
+        {
+            StatusText.Text = "Cancelled. Nothing was changed.";
+            return;
+        }
+
+        CleanButton.IsEnabled = false;
+        ScanButton.IsEnabled = false;
+        StatusText.Text = $"Cleaning {selected.Count} item(s)...";
+
+        var systemDrive = Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))!;
+        var freeBefore = new DriveInfo(systemDrive).AvailableFreeSpace;
+
+        var results = await Task.Run(() =>
+            selected.Select(vm => (Vm: vm, Result: ActionExecutor.Execute(vm.Item))).ToList());
+
+        var log = new System.Text.StringBuilder();
+        foreach (var (vm, result) in results)
+        {
+            var status = result.Success ? "OK" : "FAILED";
+            log.AppendLine($"[{status}] {vm.Label}: {result.Message}");
+
+            // Remove cleaned (non-informational) items from _allItems, then let ApplyFilter()
+            // regenerate ItemsGrid.ItemsSource - Avalonia has no persistent _visibleItems
+            // collection to remove from directly (see ApplyFilter()'s reassignment note).
+            if (result.Success && vm.Item.Action != ActionKind.SuggestCommand && vm.Item.Action != ActionKind.None)
+                _allItems.Remove(vm);
+        }
+
+        var freeAfter = new DriveInfo(systemDrive).AvailableFreeSpace;
+        log.AppendLine();
+        log.AppendLine($"Free space on {systemDrive} before: {FormatBytes(freeBefore)}");
+        log.AppendLine($"Free space on {systemDrive} after:  {FormatBytes(freeAfter)}");
+        log.AppendLine($"Difference: {FormatBytes(freeAfter - freeBefore)}");
+
+        LogBox.Text = log.ToString();
+        StatusText.Text = "Done.";
+        ApplyFilter();
+        CleanButton.IsEnabled = true;
+        ScanButton.IsEnabled = true;
+        UpdateFreeSpaceText();
+    }
+
     private void UpdateFreeSpaceText()
     {
         var systemDrive = Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))!;

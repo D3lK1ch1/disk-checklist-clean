@@ -59,10 +59,11 @@
       </ScrollViewer>
     </Border>
 
-    <!-- Action bar: Clean Selected lands in sub-unit 5 with the confirm dialog -->
+    <!-- Action bar -->
     <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,10,0,10">
       <Button x:Name="SelectAllSafeButton" Content="Select all SAFE" Click="SelectAllSafeButton_Click" />
       <Button x:Name="ClearSelectionButton" Content="Clear selection" Click="ClearSelectionButton_Click" />
+      <Button x:Name="CleanButton" Content="Clean Selected" Click="CleanButton_Click" />
       <TextBlock x:Name="FreeSpaceText" Margin="12,0,0,0" VerticalAlignment="Center" />
     </StackPanel>
 
