@@ -47,7 +47,7 @@ public static class ActionExecutor
         var failures = new List<string>();
         foreach (var file in Directory.EnumerateFiles(item.Path))
         {
-            try { File.Delete(file); deleted++; }
+            try { DeleteFileClearReadOnly(file); deleted++; }
             catch (Exception ex) { failures.Add($"{file}: {ex.Message}"); }
         }
         foreach (var dir in Directory.EnumerateDirectories(item.Path))
@@ -121,7 +121,7 @@ public static class ActionExecutor
         }
 
         foreach (var file in Directory.EnumerateFiles(path))
-            try { File.Delete(file); }
+            try { DeleteFileClearReadOnly(file); }
             catch (Exception ex) { failures?.Add($"{file}: {ex.Message}"); }
 
         foreach (var sub in Directory.EnumerateDirectories(path))
@@ -147,7 +147,7 @@ public static class ActionExecutor
 
         try
         {
-            File.Delete(item.Path);
+            DeleteFileClearReadOnly(item.Path);
             return new ActionResult(item, true, "File deleted.");
         }
         catch (Exception ex)
@@ -155,6 +155,18 @@ public static class ActionExecutor
             return new ActionResult(item, false,
                 $"Could not delete file. Blocked by: {ex.Message}. Run elevated: Remove-Item -Force \"{item.Path}\"");
         }
+    }
+
+    // Git (packed objects) and some installers write files read-only by design - not
+    // locked, just flagged. Clearing the attribute first lets a genuine delete succeed
+    // instead of failing with a generic "Access is denied" indistinguishable from a real
+    // lock held by a running process.
+    static void DeleteFileClearReadOnly(string path)
+    {
+        var attributes = File.GetAttributes(path);
+        if (attributes.HasFlag(FileAttributes.ReadOnly))
+            File.SetAttributes(path, attributes & ~FileAttributes.ReadOnly);
+        File.Delete(path);
     }
 
     static ActionResult MoveFolderToRecycleBin(CheckItem item)

@@ -164,6 +164,53 @@ public class ActionExecutorTests
     }
 
     [Fact]
+    public void DeleteFolder_ReadOnlyFile_IsClearedAndDeleted()
+    {
+        // Git packs objects read-only by design - not locked, just flagged. A real
+        // repo folder living inside a REVIEW/SAFE-tier temp path should still fully
+        // delete instead of failing with the same "Access is denied" a real lock gives.
+        var dir = CreateTempDirWithContents();
+        var readOnlyPath = Path.Combine(dir, "subdir", "nested.txt");
+        File.SetAttributes(readOnlyPath, File.GetAttributes(readOnlyPath) | FileAttributes.ReadOnly);
+
+        var item = new CheckItem("test folder", 0, "REVIEW", dir, Action: ActionKind.DeleteFolder);
+        var result = ActionExecutor.Execute(item);
+
+        Assert.True(result.Success);
+        Assert.False(Directory.Exists(dir));
+    }
+
+    [Fact]
+    public void DeleteContents_ReadOnlyFile_IsClearedAndDeleted()
+    {
+        var dir = CreateTempDirWithContents();
+        var readOnlyPath = Path.Combine(dir, "file.txt");
+        File.SetAttributes(readOnlyPath, File.GetAttributes(readOnlyPath) | FileAttributes.ReadOnly);
+
+        var item = new CheckItem("test temp", 0, "SAFE", dir, Action: ActionKind.DeleteContents);
+        var result = ActionExecutor.Execute(item);
+
+        Assert.True(result.Success);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(dir));
+
+        Directory.Delete(dir);
+    }
+
+    [Fact]
+    public void DeleteFile_ReadOnlyFile_IsClearedAndDeleted()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_" + Guid.NewGuid() + ".txt");
+        File.WriteAllText(path, "hello");
+        File.SetAttributes(path, File.GetAttributes(path) | FileAttributes.ReadOnly);
+
+        var item = new CheckItem("test file", 0, "SAFE", path, Action: ActionKind.DeleteFile);
+        var result = ActionExecutor.Execute(item);
+
+        Assert.True(result.Success);
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
     public void DeleteFolder_DoesNotRecurseIntoJunction()
     {
         // Target is a separate directory that should survive the deletion.
