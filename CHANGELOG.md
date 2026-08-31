@@ -1,5 +1,51 @@
 # Changelog
 
+## Session 2026-08-31
+
+### Added
+- Avalonia port sub-unit 5: `ConfirmDialog` (hand-rolled modal window, no new NuGet package —
+  Avalonia has no `MessageBox.Show` equivalent) + `MainWindow.axaml.cs`'s `CleanButton_Click`,
+  mirroring WPF's confirm-then-clean flow exactly (message listing selected items → Yes/No →
+  `ActionExecutor.Execute` off-thread → log + free-space before/after). Two adaptations from
+  WPF's version, both because Avalonia's `DataGrid` behaves differently: no
+  `ItemsGrid.CommitEdit()` call (the method doesn't exist on Avalonia's `DataGrid`, and isn't
+  needed — `ItemCheckBox_Click` already writes `vm.IsSelected` synchronously, not through a
+  deferred row-edit commit); cleaned items are removed from `_allItems` then `ApplyFilter()`
+  regenerates `ItemsGrid.ItemsSource` fresh, rather than mutating a persistent `_visibleItems`
+  collection like WPF does (matches sub-unit 4's existing reassignment pattern — Avalonia's
+  grid didn't rebind on in-place `ObservableCollection` mutation).
+
+### Fixed
+- **Read-only files were misreported as locked instead of being deleted.**
+  `ActionExecutor.cs`'s `DeleteContents`/`SafeDeleteTree`/`DeleteFile` called `File.Delete`
+  directly, which throws "Access is denied" on any file flagged `FileAttributes.ReadOnly` —
+  indistinguishable in the log from a real process lock, and unrecoverable by retrying since
+  the attribute never changes on its own. Found via a real Clean Selected run: four files
+  inside a git repo sitting in a scratch `Temp` folder failed every attempt (git writes packed
+  objects read-only by design). New `DeleteFileClearReadOnly` helper clears the `ReadOnly`
+  attribute before deleting, wired into all three call sites. 3 new tests
+  (`DeleteFolder_ReadOnlyFile_IsClearedAndDeleted`, `DeleteContents_ReadOnlyFile_IsClearedAndDeleted`,
+  `DeleteFile_ReadOnlyFile_IsClearedAndDeleted`).
+
+### Known gaps
+- Avalonia port sub-units 6-9 (runtime `PlatformSetup` OS branch, multi-target conversion to
+  `net10.0-windows;net10.0`, docs pass, real Mac hardware verification) remain unstarted — see
+  SPEC.md's "Avalonia port" section. No real Mac hardware available this session; sub-unit 7
+  (multi-target) has to land before sub-unit 9 (hardware verification) is even attemptable,
+  and access to an actual Mac to test on is the open blocker for 9 specifically.
+- `DevPackageCaches`'s pip-cache path is still wrong on Mac (pre-existing, deferred, unrelated
+  to this session's work).
+
+### Verification
+- `dotnet build` (solution-wide) — 0 warnings, 0 errors.
+- `dotnet test` — 77 passed, 0 failed, 0 skipped (74 existing + 3 new ReadOnly tests).
+- Live run via `DiskCleanup.Avalonia`: Clean Selected against real Recycle Bin/User Temp/
+  Windows Temp/Windows Update cache entries — confirm dialog appeared listing selected items,
+  Yes proceeded, resulting log matched the established `[OK]`/`[FAILED]` format exactly. A
+  second live run after the ReadOnly fix confirmed the previously-failing git-object files
+  (inside a scratch `LibreCrawl\.git\objects\pack\...` path) now clear instead of appearing
+  under "Blocked by."
+
 ## Session 2026-08-28
 
 ### Fixed
