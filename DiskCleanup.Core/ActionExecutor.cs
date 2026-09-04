@@ -195,7 +195,7 @@ public static class ActionExecutor
         {
             var secondary = trashProvider.MoveToTrash(item.SecondaryPath);
             message += secondary.Success
-                ? " Paired folder moved to Recycle Bin too."
+                ? " Paired folder moved too."
                 : $" Could not move paired folder \"{item.SecondaryPath}\": {secondary.Message}";
         }
 
