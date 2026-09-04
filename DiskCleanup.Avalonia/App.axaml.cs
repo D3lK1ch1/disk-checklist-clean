@@ -11,7 +11,7 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        ActionExecutor.TrashProvider = new WindowsTrashProvider();
+        PlatformSetup.ConfigureTrashProvider();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             desktop.MainWindow = new MainWindow();

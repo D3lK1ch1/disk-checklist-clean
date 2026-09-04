@@ -2,10 +2,18 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFrameworks>net10.0-windows;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <!-- SDK does not auto-define a per-TFM preprocessor symbol (verified via
+       `dotnet msbuild -getProperty:DefineConstants` - both TFMs come back
+       with only TRACE;DEBUG) - so PlatformSetup.cs needs its own explicit
+       symbol to branch on. -->
+  <PropertyGroup Condition="'$(TargetFramework)'=='net10.0-windows'">
+    <DefineConstants>$(DefineConstants);WINDOWS_BUILD</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,7 +29,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DiskCleanup.Core\DiskCleanup.Core.csproj" />
-    <ProjectReference Include="..\DiskCleanup.Core.Windows\DiskCleanup.Core.Windows.csproj" />
+    <ProjectReference Include="..\DiskCleanup.Core.Windows\DiskCleanup.Core.Windows.csproj" Condition="'$(TargetFramework)'=='net10.0-windows'" />
+    <ProjectReference Include="..\DiskCleanup.Core.Mac\DiskCleanup.Core.Mac.csproj" />
   </ItemGroup>
 
 </Project>
