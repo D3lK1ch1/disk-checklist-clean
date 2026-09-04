@@ -73,6 +73,16 @@ cd DiskCleanup
 dotnet run
 ```
 
+**Avalonia widget (cross-platform port, in progress):**
+```powershell
+cd DiskCleanup.Avalonia
+dotnet run --framework net10.0-windows
+```
+This project multi-targets `net10.0-windows` and `net10.0` (the Mac/Linux build isn't
+wired up yet so plain `dotnet run` fails with "Your project
+targets multiple frameworks" and `--framework` on its own errors with "Required argument
+missing" — it needs a value, not just the flag.
+
 **Tests:**
 ```powershell
 dotnet test
