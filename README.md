@@ -9,12 +9,12 @@ A personal Windows disk-space cleanup tool. Scans common sources of reclaimable 
 - Every scan/delete failure is surfaced by name and reason (no silent skip counts)
 - Before/after free-space totals on every cleanup run
 
-The scheduled/background check work is still pending — see [Roadmap](#roadmap).
+The scheduled/background check work is still pending.
 
 ## What it scans
 
 - Recycle Bin
-- User Temp (`%TEMP%`), system-wide `C:\Windows\Temp`, and Windows Update's `SoftwareDistribution\Download` cache
+- User Temp (`%TEMP%`), system-wide `C:\Windows\Temp`, and Windows Update's `SoftwareDistribution\Download` cache (Some undeletable regardless and will be said so with a long log)
 - VS Code `CachedExtensionVSIXs`
 - Dev package caches: NuGet (`~/.nuget/packages`), pip (`%LocalAppData%\pip\Cache`)
 - WSL: `~/.cache`, `~/.npm`, `~/.local/share/pnpm/store`, and any `node_modules`/`target` dirs anywhere under `$HOME` — classified SAFE (project marker present), REVIEW (marker missing), or INFO (inside a known remote-dev-server dir like `.vscode-server`, excluded rather than walked into)
@@ -50,10 +50,13 @@ Deleting a cache folder removes bytes nothing else depends on, and it's fully re
 
 ## Project structure
 
-- `DiskCleanup.Core/` — scanners, action executor, selection parsing (shared library)
-- `DiskCleanup/` — console app (checklist + numeric selection)
-- `DiskCleanup.Wpf/` — desktop widget (checklist grid, risk filter, details pane, Clean Selected)
-- `DiskCleanup.Tests/` — xUnit tests for `Core`
+- `DiskCleanup.Core/` — cross-platform scanners, action executor, selection parsing (shared library)
+- `DiskCleanup.Core.Windows/` — Windows-only scanners + `WindowsTrashProvider`
+- `DiskCleanup.Core.Mac/` — `MacTrashProvider` (`~/.Trash`); no Mac-specific scanners yet
+- `DiskCleanup/` — console app (checklist + numeric selection), Windows-only
+- `DiskCleanup.Wpf/` — Windows desktop widget (checklist grid, risk filter, details pane, Clean Selected)
+- `DiskCleanup.Avalonia/` — cross-platform GUI port, in progress (see [Roadmap](#roadmap))
+- `DiskCleanup.Tests/` — xUnit tests for `Core`, `Core.Windows`, `Core.Mac`
 
 ## Running it
 
@@ -81,7 +84,7 @@ dotnet run --framework net10.0-windows
 This project multi-targets `net10.0-windows` and `net10.0` (the Mac/Linux build isn't
 wired up yet so plain `dotnet run` fails with "Your project
 targets multiple frameworks" and `--framework` on its own errors with "Required argument
-missing" — it needs a value, not just the flag.
+missing" — it needs a value, not just the flag.)
 
 **Tests:**
 ```powershell
@@ -100,7 +103,13 @@ wrong. Click **More info → Run anyway** to proceed.
 
 - `--check` mode: silent scan + Windows toast notification when free space drops below 45GB, triggered via Task Scheduler (setup command printed, not auto-configured)
 - Filter by category/size in the widget (risk-level filter already exists)
-- Cross-platform support (Linux, Mac) via an Avalonia UI rewrite of the widget, alongside the existing WPF version — blocked on splitting `DiskCleanup.Core` off its current Windows-only target framework first
+- Cross-platform support (Linux, Mac) via the Avalonia port in `DiskCleanup.Avalonia/`,
+  alongside the existing WPF version. `DiskCleanup.Core` is already split off its
+  Windows-only target framework, and the Avalonia project multi-targets
+  `net10.0-windows`/`net10.0` with a runtime OS branch (`PlatformSetup.cs`) picking the
+  right scanners/trash provider. Still needed: real Mac hardware to verify the `net10.0`
+  build and `MacTrashProvider`/`~/.Trash` actually work as intended (untested outside this
+  Windows dev machine), and Mac/Linux-specific scanners beyond the already-portable ones.
 
 ## License
 
