@@ -7,10 +7,9 @@
   <Grid Margin="10">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
+      <RowDefinition Height="*" MinHeight="150" />
       <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="120" />
+      <RowDefinition Height="120" MinHeight="60" />
     </Grid.RowDefinitions>
 
     <!-- Toolbar -->
@@ -27,48 +26,73 @@
       <TextBlock x:Name="StatusText" Text="Not scanned yet." Margin="12,0,0,0" VerticalAlignment="Center" />
     </StackPanel>
 
-    <!-- Results grid: checkbox column drives real per-row selection state (CheckItemViewModel.IsSelected) -->
-    <DataGrid x:Name="ItemsGrid" Grid.Row="1" AutoGenerateColumns="False"
-              IsReadOnly="False" SelectionMode="Extended" RowHeight="28"
-              x:DataType="local:CheckItemViewModel"
-              SelectionChanged="ItemsGrid_SelectionChanged">
-      <DataGrid.Columns>
-        <DataGridTemplateColumn Header="" Width="40">
-          <DataGridTemplateColumn.CellTemplate>
-            <DataTemplate x:DataType="local:CheckItemViewModel">
-              <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}"
-                        IsEnabled="{Binding CanSelect}"
-                        HorizontalAlignment="Center"
-                        Click="ItemCheckBox_Click" />
-            </DataTemplate>
-          </DataGridTemplateColumn.CellTemplate>
-        </DataGridTemplateColumn>
-        <DataGridTextColumn Header="Item" Binding="{Binding Label}" Width="*" IsReadOnly="True" />
-        <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="100" IsReadOnly="True" />
-        <DataGridTextColumn Header="Risk" Binding="{Binding Risk}" Width="90" IsReadOnly="True" />
-        <DataGridTextColumn Header="Action" Binding="{Binding ActionDescription}" Width="130" IsReadOnly="True" />
-      </DataGrid.Columns>
-    </DataGrid>
+    <!-- Grouped so the log's splitter below trades space with this whole block's
+         Star row (the DataGrid) instead of stopping at the Details/action-bar rows -
+         a GridSplitter only ever resizes its own immediate previous/next row, so
+         without this nesting it can't reach past those fixed rows into the grid. -->
+    <Grid Grid.Row="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*" MinHeight="100" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="100" MinHeight="40" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
 
-    <!-- Details: full path + Reason for the selected row, same purpose as WPF's DetailsText -->
-    <Border Grid.Row="2" BorderThickness="1" Margin="0,10,0,0" Padding="8">
-      <ScrollViewer MaxHeight="100">
-        <TextBox x:Name="DetailsText" TextWrapping="Wrap" IsReadOnly="True"
-                 BorderThickness="0" Background="Transparent"
-                 Text="Select an item to see its full path and why it's categorized that way." />
-      </ScrollViewer>
-    </Border>
+      <!-- Results grid: checkbox column drives real per-row selection state (CheckItemViewModel.IsSelected) -->
+      <DataGrid x:Name="ItemsGrid" Grid.Row="0" AutoGenerateColumns="False"
+                IsReadOnly="False" SelectionMode="Extended" RowHeight="28"
+                x:DataType="local:CheckItemViewModel"
+                SelectionChanged="ItemsGrid_SelectionChanged">
+        <DataGrid.Columns>
+          <DataGridTemplateColumn Header="" Width="40">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate x:DataType="local:CheckItemViewModel">
+                <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}"
+                          IsEnabled="{Binding CanSelect}"
+                          HorizontalAlignment="Center"
+                          Click="ItemCheckBox_Click" />
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Header="Item" Binding="{Binding Label}" Width="*" IsReadOnly="True" />
+          <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="100" IsReadOnly="True" />
+          <DataGridTextColumn Header="Risk" Binding="{Binding Risk}" Width="90" IsReadOnly="True" />
+          <DataGridTextColumn Header="Action" Binding="{Binding ActionDescription}" Width="130" IsReadOnly="True" />
+        </DataGrid.Columns>
+      </DataGrid>
 
-    <!-- Action bar -->
-    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,10,0,10">
-      <Button x:Name="SelectAllSafeButton" Content="Select all SAFE" Click="SelectAllSafeButton_Click" />
-      <Button x:Name="ClearSelectionButton" Content="Clear selection" Click="ClearSelectionButton_Click" />
-      <Button x:Name="CleanButton" Content="Clean Selected" Click="CleanButton_Click" />
-      <TextBlock x:Name="FreeSpaceText" Margin="12,0,0,0" VerticalAlignment="Center" />
-    </StackPanel>
+      <!-- Drag to resize the checklist vs. the details pane below -->
+      <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                    Background="#DDDDDD" ResizeDirection="Rows" Cursor="SizeNorthSouth" />
+
+      <!-- Details: full path + Reason for the selected row, same purpose as WPF's DetailsText.
+           No MaxHeight on the ScrollViewer - it fills whatever height the row above's
+           GridSplitter gives it; VerticalScrollBarVisibility still covers the case where
+           the row is left small and content is long. -->
+      <Border Grid.Row="2" BorderThickness="1" Margin="0,10,0,0" Padding="8">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <TextBox x:Name="DetailsText" TextWrapping="Wrap" IsReadOnly="True"
+                   BorderThickness="0" Background="Transparent"
+                   Text="Select an item to see its full path and why it's categorized that way." />
+        </ScrollViewer>
+      </Border>
+
+      <!-- Action bar -->
+      <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,10,0,10">
+        <Button x:Name="SelectAllSafeButton" Content="Select all SAFE" Click="SelectAllSafeButton_Click" />
+        <Button x:Name="ClearSelectionButton" Content="Clear selection" Click="ClearSelectionButton_Click" />
+        <Button x:Name="CleanButton" Content="Clean Selected" Click="CleanButton_Click" />
+        <TextBlock x:Name="FreeSpaceText" Margin="12,0,0,0" VerticalAlignment="Center" />
+      </StackPanel>
+    </Grid>
+
+    <!-- Drag to resize the log below - trades space with the whole grid above
+         (via its Star row), not just the action bar immediately above it. -->
+    <GridSplitter Grid.Row="2" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                  Background="#DDDDDD" ResizeDirection="Rows" Cursor="SizeNorthSouth" />
 
     <!-- Log / warnings -->
-    <TextBox x:Name="LogBox" Grid.Row="4" IsReadOnly="True" TextWrapping="Wrap"
+    <TextBox x:Name="LogBox" Grid.Row="3" IsReadOnly="True" TextWrapping="Wrap"
              FontFamily="Consolas" AcceptsReturn="True" />
   </Grid>
 </Window>
