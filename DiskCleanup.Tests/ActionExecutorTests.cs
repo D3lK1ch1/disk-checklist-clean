@@ -87,6 +87,26 @@ public class ActionExecutorTests
         Assert.Contains("docker image prune -a", result.Message);
     }
 
+    // RunDocker's guard tests only - they must refuse before any process is
+    // started, so they pass whether or not Docker is installed.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("docker")]
+    [InlineData("powershell Remove-Item C:\\")]
+    [InlineData("dockerx volume rm foo")]
+    [InlineData("  cmd /c docker volume rm foo")]
+    public void RunDocker_NonDockerCommand_IsRefused(string? command)
+    {
+        var item = new CheckItem("bad command", 0, "REVIEW",
+            Action: ActionKind.RunDocker, CommandSuggestion: command);
+
+        var result = ActionExecutor.Execute(item);
+
+        Assert.False(result.Success);
+        Assert.StartsWith("Refused", result.Message);
+    }
+
     [Fact]
     public void None_ReturnsSuccessWithNoAction()
     {

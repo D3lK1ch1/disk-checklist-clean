@@ -28,8 +28,61 @@ public static class ActionExecutor
             ActionKind.MoveFolderToRecycleBin => MoveFolderToRecycleBin(item),
             ActionKind.MoveFileToRecycleBin => MoveFileToRecycleBin(item),
             ActionKind.SuggestCommand => new ActionResult(item, true, $"Suggested command (run yourself): {item.CommandSuggestion}"),
+            ActionKind.RunDocker => RunDocker(item),
             _ => new ActionResult(item, true, "No action taken (informational only)."),
         };
+    }
+
+    // Prune commands can run for minutes on a large image cache; volume rm is
+    // near-instant. One generous budget covers both.
+    static readonly TimeSpan DockerTimeout = TimeSpan.FromMinutes(2);
+
+    // Runs item.CommandSuggestion, which must start with "docker ". The rest is
+    // split on whitespace and passed via ArgumentList (no shell), so nothing
+    // other than the docker binary can ever be launched. Docker object names
+    // can't contain spaces, so whitespace splitting is safe for them.
+    // Callers must include -f on prune commands - stdin isn't attached, so
+    // docker's "Are you sure? [y/N]" prompt would otherwise abort the prune.
+    static ActionResult RunDocker(CheckItem item)
+    {
+        var parts = (item.CommandSuggestion ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2 || parts[0] != "docker")
+            return new ActionResult(item, false, $"Refused: RunDocker only runs 'docker ...' commands, got \"{item.CommandSuggestion}\".");
+
+        var psi = new System.Diagnostics.ProcessStartInfo("docker")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var arg in parts.Skip(1)) psi.ArgumentList.Add(arg);
+
+        try
+        {
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc == null)
+                return new ActionResult(item, false, "Could not start docker.");
+
+            // Read both streams concurrently - reading one to the end first can
+            // deadlock if the other's buffer fills up.
+            var stdout = proc.StandardOutput.ReadToEndAsync();
+            var stderr = proc.StandardError.ReadToEndAsync();
+
+            if (!proc.WaitForExit(DockerTimeout))
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { }
+                return new ActionResult(item, false, $"Timed out after {DockerTimeout.TotalSeconds:0}s: {item.CommandSuggestion}");
+            }
+
+            var output = (stdout.Result + stderr.Result).Trim();
+            return proc.ExitCode == 0
+                ? new ActionResult(item, true, $"Ran: {item.CommandSuggestion}{Environment.NewLine}{output}")
+                : new ActionResult(item, false, $"Failed (exit {proc.ExitCode}): {item.CommandSuggestion}{Environment.NewLine}{output}");
+        }
+        catch (Exception ex)
+        {
+            return new ActionResult(item, false, $"Could not run docker - is Docker Desktop installed and running? ({ex.Message})");
+        }
     }
 
     static ActionResult EmptyRecycleBin(CheckItem item)
