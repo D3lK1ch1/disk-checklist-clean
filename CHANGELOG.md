@@ -1,5 +1,60 @@
 # Changelog
 
+## Session 2026-09-29
+
+### Added
+- **`ActionKind.RunDocker` — Docker rows can now actually run, not just suggest.** New action
+  in `ActionExecutor.cs` that executes `CommandSuggestion` for real, but only if it starts with
+  exactly `docker`. The remaining words go through `ProcessStartInfo.ArgumentList` — no shell —
+  so the docker binary is the only thing it can ever launch. Deliberately not a generic
+  `RunCommand`: that would let any scanner bug become "run anything." stdout/stderr are read
+  concurrently (reading one to the end first can deadlock if the other's buffer fills), with a
+  2-minute timeout that kills the process tree. The result message carries docker's own output
+  either way. Prune commands must include `-f`, since stdin isn't attached and docker's
+  "Are you sure? [y/N]" prompt would otherwise abort them.
+- **`DockerVolumes()` scanner (`Scanners.cs`) — one row per Docker volume.** Before this, the
+  only volume visibility was `Docker()`'s single "Docker Volumes (reclaimable)" summary row, so
+  there was no way to tell e.g. a live project's database from a dropped project's leftovers.
+  Reads `docker system df -v --format "{{json .Volumes}}"` (format confirmed against real
+  output first — every field, including `Links` and `Size`, is a JSON string). Volumes with
+  `Links == "0"` become REVIEW rows with `RunDocker: docker volume rm <name>`; anything else
+  (a count, or `N/A`) is treated as in use and listed INFO-only with no action — docker would
+  refuse the removal anyway. Reason text names the compose project (from the
+  `com.docker.compose.project` label) or flags the volume as anonymous, warns when the name looks
+  like a database (`pgdata`/`mysql`/`db_data`/...), and states plainly that deletion is permanent
+  (no Recycle Bin) and that on Windows the space is freed inside Docker's `.vhdx`, not on C:,
+  until compacted. Anonymous volumes are labeled by the first 12 characters of their hash but
+  removed by full name. JSON parsing is split into public `ParseDockerVolumes(string)` so it's
+  testable without Docker. Wired into all four scan lists: WPF, Avalonia (Windows and
+  Mac/Linux branches), and the console app.
+
+### Tests
+- `ActionExecutorTests.RunDocker_NonDockerCommand_IsRefused` — 6 cases (null, empty, bare
+  `docker`, `powershell ...`, `dockerx ...`, `cmd /c docker ...`), all refused before any process
+  starts, so they pass with or without Docker installed.
+- New `DockerVolumesTests.cs`: 4 parser tests against a trimmed copy of real output (unused
+  named/database volume, anonymous volume, in-use volume, empty array), plus
+  `E2E_ScanThenRemove_DeletesRealVolume` — creates a throwaway `diskcleanup-e2e-<guid>` volume,
+  asserts the scanner lists it as `RunDocker`, deletes it through `ActionExecutor.Execute`, and
+  asserts `docker volume ls` no longer shows it. Only ever touches its own volume.
+
+### Known gaps
+- The E2E test returns early (passes without asserting) when Docker isn't running — xunit 2.9
+  has no runtime skip. A green run on a machine without Docker proves nothing about it.
+- `Docker()`'s existing "Docker Volumes (reclaimable)" summary row still suggests plain
+  `docker volume prune`, which since Docker 23 only removes *anonymous* volumes — it can
+  under-deliver against the reclaimable figure shown. Now largely redundant with the per-volume
+  rows. The Images/Containers/Build cache rows remain `SuggestCommand`; converting them to
+  `RunDocker` was considered and dropped as not needed.
+- This partially reverses the [0.0.1] design decision "Docker ... cleanups are surfaced as
+  suggested commands, not executed directly" — for volumes only.
+
+### Verification
+- `dotnet test` (filtered to `DockerVolumesTests` + `ActionExecutorTests`) — 25 passed, 0 failed,
+  with Docker Desktop running (`docker info` exit 0), so the E2E test genuinely exercised a real
+  volume; no leftover `diskcleanup-e2e-*` volume afterwards.
+- `dotnet build` of `DiskCleanup.Avalonia`, `DiskCleanup.Wpf`, and `DiskCleanup` — all succeeded.
+
 ## Session 2026-09-11
 
 ### Fixed
