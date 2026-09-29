@@ -147,6 +147,88 @@ public static class Scanners
         return items;
     }
 
+    // One row per Docker volume, unlike Docker()'s single "Volumes" summary.
+    // Unused volumes (0 containers attached, running or stopped) get a
+    // RunDocker `volume rm` action; in-use ones are listed as INFO only since
+    // docker would refuse to remove them anyway.
+    public static List<CheckItem> DockerVolumes(List<string>? warnings = null)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("docker", "system df -v --format \"{{json .Volumes}}\"")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            using var proc = Process.Start(psi);
+            if (proc == null) return new List<CheckItem>();
+
+            var output = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit(15000); // -v computes per-volume sizes, slower than plain `system df`
+            if (proc.ExitCode != 0)
+            {
+                warnings?.Add("Docker volumes: 'docker system df -v' failed — is Docker Desktop running?");
+                return new List<CheckItem>();
+            }
+            return ParseDockerVolumes(output);
+        }
+        catch (Exception ex)
+        {
+            warnings?.Add($"Docker volumes: could not query ({ex.Message})");
+            return new List<CheckItem>();
+        }
+    }
+
+    // Split out from DockerVolumes() so the JSON handling is testable without
+    // Docker installed. Input is `docker system df -v --format "{{json .Volumes}}"`:
+    // a JSON array where every field (including Links and Size) is a string.
+    public static List<CheckItem> ParseDockerVolumes(string json)
+    {
+        var items = new List<CheckItem>();
+        using var doc = JsonDocument.Parse(json);
+        foreach (var vol in doc.RootElement.EnumerateArray())
+        {
+            var name = vol.GetProperty("Name").GetString() ?? "";
+            var size = vol.GetProperty("Size").GetString() ?? "?";
+            var links = vol.GetProperty("Links").GetString() ?? "";
+            var labels = vol.GetProperty("Labels").GetString() ?? "";
+
+            var anonymous = labels.Contains("com.docker.volume.anonymous");
+            var project = labels.Split(',')
+                .Select(l => l.Split('=', 2))
+                .FirstOrDefault(kv => kv.Length == 2 && kv[0] == "com.docker.compose.project")?[1];
+            var label = anonymous ? $"Docker volume (anonymous) {name[..Math.Min(12, name.Length)]}" : $"Docker volume {name}";
+
+            // Anything other than exactly "0" (a count, or "N/A") is treated as
+            // in use - the safe default when docker's answer is unclear.
+            if (links != "0")
+            {
+                items.Add(new CheckItem(label, 0, "INFO", SizeOverride: size,
+                    Reason: $"In use by {links} container(s). Remove those containers first if you want to delete this volume."));
+                continue;
+            }
+
+            var reason = anonymous
+                ? "Anonymous volume not attached to any container - usually a leftover from a removed container."
+                : project != null
+                    ? $"Named volume from compose project \"{project}\", not attached to any container."
+                    : "Named volume not attached to any container.";
+            if (LooksLikeDatabase(name))
+                reason += " The name suggests it holds a database.";
+            reason += " Deleting a volume is permanent - it does not go to the Recycle Bin." +
+                      " On Windows, the space is freed inside Docker's disk image; compact it (see the Docker WSL2 disk image row) to get it back on C:.";
+
+            items.Add(new CheckItem(label, 0, "REVIEW", SizeOverride: size,
+                Action: ActionKind.RunDocker, CommandSuggestion: $"docker volume rm {name}", Reason: reason));
+        }
+        return items;
+    }
+
+    static bool LooksLikeDatabase(string name) =>
+        new[] { "pgdata", "postgres", "mysql", "mariadb", "mongo", "db_data", "db-data" }
+            .Any(k => name.Contains(k, StringComparison.OrdinalIgnoreCase));
+
     public static List<CheckItem> DownloadsTopFolders(int topN = 5, List<string>? warnings = null)
     {
         var items = new List<CheckItem>();

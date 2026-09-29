@@ -14,6 +14,7 @@ items.AddRange(Scanners.DevPackageCaches(warnings));
 items.AddRange(WindowsScanners.Wsl(warnings));
 items.AddRange(Scanners.NativeBuildDirs(warnings));
 items.AddRange(Scanners.Docker(warnings));
+items.AddRange(Scanners.DockerVolumes(warnings));
 items.AddRange(WindowsScanners.DockerVhdxBloat(warnings: warnings));
 items.AddRange(WindowsScanners.SystemRootClutter(warnings: warnings));
 items.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));

@@ -38,6 +38,7 @@ public partial class MainWindow : Window
             result.AddRange(WindowsScanners.Wsl(warnings));
             result.AddRange(Scanners.NativeBuildDirs(warnings));
             result.AddRange(Scanners.Docker(warnings));
+            result.AddRange(Scanners.DockerVolumes(warnings));
             result.AddRange(WindowsScanners.DockerVhdxBloat(warnings: warnings));
             result.AddRange(WindowsScanners.SystemRootClutter(warnings: warnings));
             result.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));

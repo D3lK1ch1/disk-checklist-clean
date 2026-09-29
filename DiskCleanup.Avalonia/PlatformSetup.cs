@@ -38,6 +38,7 @@ public static class PlatformSetup
         result.AddRange(WindowsScanners.Wsl(warnings));
         result.AddRange(Scanners.NativeBuildDirs(warnings));
         result.AddRange(Scanners.Docker(warnings));
+        result.AddRange(Scanners.DockerVolumes(warnings));
         result.AddRange(WindowsScanners.DockerVhdxBloat(warnings: warnings));
         result.AddRange(WindowsScanners.SystemRootClutter(warnings: warnings));
         result.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));
@@ -54,6 +55,7 @@ public static class PlatformSetup
         result.AddRange(Scanners.DevPackageCaches(warnings));
         result.AddRange(Scanners.NativeBuildDirs(warnings));
         result.AddRange(Scanners.Docker(warnings));
+        result.AddRange(Scanners.DockerVolumes(warnings));
         result.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));
         result.AddRange(Scanners.AiFolders(warnings));
         result.AddRange(Scanners.PersonalFolders(warnings: warnings));

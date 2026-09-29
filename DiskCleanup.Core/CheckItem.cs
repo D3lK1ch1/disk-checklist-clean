@@ -10,6 +10,9 @@ public enum ActionKind
     MoveFolderToRecycleBin,
     MoveFileToRecycleBin,
     SuggestCommand,
+    // Runs CommandSuggestion for real, but only if it's a `docker ...` command -
+    // deliberately not a generic "run any command" action.
+    RunDocker,
 }
 
 public record CheckItem(
@@ -38,6 +41,7 @@ public record CheckItem(
         ActionKind.MoveFolderToRecycleBin => "→ Recycle Bin",
         ActionKind.MoveFileToRecycleBin   => "→ Recycle Bin",
         ActionKind.SuggestCommand         => "suggest command",
+        ActionKind.RunDocker              => "run docker command",
         _                                 => "unknown",
     };
 
