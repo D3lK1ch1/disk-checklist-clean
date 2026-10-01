@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Read by scripts/package-mac.sh for Info.plist and the DMG file name. -->
+    <Version>0.0.2</Version>
   </PropertyGroup>
 
   <!-- SDK does not auto-define a per-TFM preprocessor symbol (verified via
