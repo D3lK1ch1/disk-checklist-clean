@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.0.2] - 2026-10-02
+
+First macOS build — an experimental, ad-hoc-signed `.dmg` for Apple Silicon, published as a
+GitHub **pre-release** 
+
+### Added
+- **`scripts/package-mac.sh`** — packages `DiskCleanup.Avalonia` for macOS. `dotnet publish`
+  (`-f net10.0 -r osx-arm64 --self-contained`) only produces a folder of binaries, unlike
+  Tauri, so the script builds the rest itself: a `Disk Cleanup.app` bundle with an
+  `Info.plist` whose `CFBundleExecutable` points at `DiskCleanup.Avalonia`, an ad-hoc
+  signature (`codesign -s -`, then `codesign --verify`), and a `.dmg` with an Applications
+  shortcut (`hdiutil create -format UDZO`). Ad-hoc signing matters because Apple Silicon
+  refuses to run unsigned arm64 binaries at all — the same class of failure as
+  AccountabilityApp issue #7. No hardened runtime: it blocks .NET's JIT without extra
+  entitlements. `set -euo pipefail` stops the script on any failing step, so e.g. a renamed
+  executable fails at `chmod +x` instead of shipping an app that can't launch.
+- **`<Version>0.0.2</Version>`** in `DiskCleanup.Avalonia.csproj` — the script reads it for
+  `Info.plist` and the DMG name (`DiskCleanup_0.0.2_aarch64.dmg`).
+- **`.github/workflows/ci.yml`** — first CI for this repo. One job, `build-macos` on
+  `macos-latest`, on every push/PR to `main`, mirroring AccountabilityApp's
+  `tauri-build-macos`: runs the script, `hdiutil verify` + mount/unmount, writes
+  `dmg.sha256` and the SHA-256 into the run summary, uploads both as the `macos-dmg`
+  artifact (`if-no-files-found: error`).
+- **README "macOS (Experimental)" section** — unsigned/Apple-Silicon-only warning, checksum
+  one-liner against GitHub's per-asset digests, Open Anyway / `xattr` first-launch steps,
+  and what differs on Mac (portable scanners only, `$TMPDIR` is permanent-delete SAFE,
+  REVIEW items go to `~/.Trash` without Finder's Put Back, possible Full Disk Access).
+
+### Known gaps
+- **Not yet run on a real Mac.** CI proves it builds, signs, and produces a valid `.dmg` —
+  not that it launches, scans, or that `MacTrashProvider` works. Avalonia sub-unit 9 stays
+  open until a tester reports back.
+- **No tests run in CI.** `DiskCleanup.Tests` targets `net10.0-windows` (it references
+  `Core.Windows`), so it can't run on the macOS runner. Multi-targeting it is a separate unit.
+- No Trash scanner on Mac — `MacTrashProvider` is only used to move REVIEW items into
+  `~/.Trash`; nothing offers to empty it.
+- Full Disk Access for `~/.Trash` is unconfirmed — documented as "if you see a permission
+  error", not as a required step.
+- Apple Silicon only, no notarization, no Intel/universal build.
+- `DevPackageCaches`'s pip-cache path is still wrong on Mac (pre-existing, from 2026-08-31).
+
+### Verification
+- CI run 36886749673 on `main`: green in 59s. Log shows
+  `Built: …/DiskCleanup_0.0.2_aarch64.dmg` and
+  `hdiutil: verify: checksum of "publish/mac/DiskCleanup_0.0.2_aarch64.dmg" is VALID`.
+  Artifact `macos-dmg` (48.9 MB) uploaded and downloaded successfully.
+- On Windows before CI: `bash -n` syntax check of the script, `<Version>` parsing, and a
+  real `osx-arm64` publish producing the `DiskCleanup.Avalonia` executable.
+
 ## Session 2026-09-29
 
 ### Added

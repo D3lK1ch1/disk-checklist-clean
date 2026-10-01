@@ -1,6 +1,6 @@
 # disk-checklist-clean
 
-A personal Windows disk-space cleanup tool. Scans common sources of reclaimable space, shows you a checklist, and only deletes what you explicitly tick and confirm. Nothing runs automatically, and nothing leaves your machine — there are no network calls anywhere in this codebase.
+A personal disk-space cleanup tool for Windows, with an experimental macOS build. Scans common sources of reclaimable space, shows you a checklist, and only deletes what you explicitly tick and confirm. Nothing runs automatically, and nothing leaves your machine — there are no network calls anywhere in this codebase.
 
 ## Features
 
@@ -55,7 +55,7 @@ Deleting a cache folder removes bytes nothing else depends on, and it's fully re
 - `DiskCleanup.Core.Mac/` — `MacTrashProvider` (`~/.Trash`); no Mac-specific scanners yet
 - `DiskCleanup/` — console app (checklist + numeric selection), Windows-only
 - `DiskCleanup.Wpf/` — Windows desktop widget (checklist grid, risk filter, details pane, Clean Selected)
-- `DiskCleanup.Avalonia/` — cross-platform GUI port, in progress (see [Roadmap](#roadmap))
+- `DiskCleanup.Avalonia/` — cross-platform GUI port; this is what ships as the macOS build (see [Roadmap](#roadmap))
 - `DiskCleanup.Tests/` — xUnit tests for `Core`, `Core.Windows`, `Core.Mac`
 
 ## Running it
@@ -81,23 +81,88 @@ dotnet run
 cd DiskCleanup.Avalonia
 dotnet run --framework net10.0-windows
 ```
-This project multi-targets `net10.0-windows` and `net10.0` (the Mac/Linux build isn't
-wired up yet so plain `dotnet run` fails with "Your project
-targets multiple frameworks" and `--framework` on its own errors with "Required argument
-missing" — it needs a value, not just the flag.)
+This project multi-targets `net10.0-windows` and `net10.0`, so plain `dotnet run` fails
+with "Your project targets multiple frameworks", and `--framework` on its own errors with
+"Required argument missing" — it needs a value, not just the flag.
+
+**macOS build (on a Mac):**
+```bash
+bash scripts/package-mac.sh
+```
+Produces `publish/mac/DiskCleanup_<version>_aarch64.dmg` (version comes from
+`DiskCleanup.Avalonia.csproj`). CI runs the same script on every push to `main` — see
+`.github/workflows/ci.yml`.
 
 **Tests:**
 ```powershell
 dotnet test
 ```
 
-## Getting the exe without building it
+## Downloading a prebuilt build
 
-Grab the latest `.exe` from [Releases](https://github.com/D3lK1ch1/disk-cleanup/releases)
+### Windows
+
+Grab the latest `.exe` from [Releases](https://github.com/D3lK1ch1/disk-checklist-clean/releases)
 — a single self-contained file (~130MB), no .NET runtime install and no other files needed
 alongside it. It's unsigned, so Windows SmartScreen will show a "Windows protected your PC"
 warning on first run — that's expected for an unsigned indie exe, not a sign anything's
 wrong. Click **More info → Run anyway** to proceed.
+
+### macOS (Experimental)
+
+> **The macOS build is unsigned and experimental.** This is a free, non-commercial project
+> without an Apple Developer ID, so macOS cannot verify who made the app. It is built and
+> checked in CI but has not yet been run on a physical Mac by the maintainer. Apple Silicon
+> only (Intel Macs are not supported), macOS 12 or later. Use at your own discretion; see
+> [LICENSE](LICENSE) for warranty terms.
+
+Download `DiskCleanup_<version>_aarch64.dmg` from the
+[Releases](https://github.com/D3lK1ch1/disk-checklist-clean/releases) page (macOS builds are
+marked **Pre-release**).
+
+**Check the download** (optional, recommended). This compares the file against the SHA-256
+GitHub records for each release asset. Run it in the folder you downloaded to, with the
+release's tag:
+```bash
+curl -s https://api.github.com/repos/D3lK1ch1/disk-checklist-clean/releases/tags/v0.0.2 | \
+    jq -r '.assets[] | "\(.digest | ltrimstr("sha256:"))  \(.name)"' | \
+    shasum -a 256 -c --ignore-missing
+```
+It should print `OK` next to the `.dmg`. `FAILED` means the file is corrupted or was changed
+— don't open it.
+
+**First launch** — macOS will block the app with *"Apple could not verify…"*. To allow it:
+
+1. Open the `.dmg` and drag **Disk Cleanup** into your **Applications** folder.
+2. Open the app once and dismiss the warning.
+3. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**
+   next to the Disk Cleanup message.
+4. Open the app again and confirm.
+
+Or, from Terminal:
+```bash
+xattr -dr com.apple.quarantine "/Applications/Disk Cleanup.app"
+```
+
+**After updating to a new version:** repeat the **Open Anyway** step — every new download is
+quarantined again.
+
+**What's different on macOS:**
+- Only the cross-platform scanners run: user temp (`$TMPDIR`), VS Code cache, dev package
+  caches, `node_modules`/`target` build dirs, Docker, Downloads/personal folders, and
+  `.claude`/`.codex` folders. There is no Trash scanner yet, and none of the Windows-only
+  ones (Windows Update, AppData, installed apps, WSL).
+- **User Temp is `$TMPDIR`**, where running Mac apps keep live files. It's SAFE-tier, so
+  cleaning it deletes permanently. Quit other apps first if you tick it.
+- REVIEW items move to `~/.Trash`, but Finder's **Put Back** won't work for them — drag
+  them out of the Trash by hand to restore.
+- If a REVIEW item fails to move to the Trash with a permission error, give Disk Cleanup
+  **Full Disk Access** in **System Settings → Privacy & Security → Full Disk Access**.
+  (Not yet confirmed whether this is needed.)
+
+**Prefer not to bypass?** Building from source avoids the warning entirely, since locally
+built apps aren't quarantined. Install the .NET 10 SDK, then run `bash scripts/package-mac.sh`
+and open the `.app` in `publish/mac/`.
 
 ## Roadmap
 
@@ -107,9 +172,11 @@ wrong. Click **More info → Run anyway** to proceed.
   alongside the existing WPF version. `DiskCleanup.Core` is already split off its
   Windows-only target framework, and the Avalonia project multi-targets
   `net10.0-windows`/`net10.0` with a runtime OS branch (`PlatformSetup.cs`) picking the
-  right scanners/trash provider. Still needed: real Mac hardware to verify the `net10.0`
-  build and `MacTrashProvider`/`~/.Trash` actually work as intended (untested outside this
-  Windows dev machine), and Mac/Linux-specific scanners beyond the already-portable ones.
+  right scanners/trash provider. The macOS build is packaged as an ad-hoc-signed `.dmg` in
+  CI (see [macOS (Experimental)](#macos-experimental)). Still needed: confirmation from a
+  real Mac that the app launches and `MacTrashProvider`/`~/.Trash` work as intended, a Trash
+  scanner for Mac, Mac/Linux-specific scanners beyond the already-portable ones, and running
+  the test suite on macOS (`DiskCleanup.Tests` is Windows-only today).
 
 ## License
 
