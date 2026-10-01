@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # Mirrors AccountabilityApp's tauri-build-macos job. Tauri builds the .app/.dmg itself;
+  # here scripts/package-mac.sh does that (publish -> .app -> ad-hoc sign -> .dmg).
+  # No tests: DiskCleanup.Tests targets net10.0-windows, so it can't run on macOS yet.
+  build-macos:
+    runs-on: macos-latest   # Apple Silicon runner, matches the osx-arm64 build
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - run: bash scripts/package-mac.sh
+      - run: |
+          DMG=$(find publish/mac -maxdepth 1 -name '*.dmg')
+          echo "Verifying $DMG"
+          hdiutil verify "$DMG"
+          hdiutil attach -nobrowse -noautoopen "$DMG" -mountpoint /tmp/dmg-verify
+          hdiutil detach /tmp/dmg-verify
+          cd "$(dirname "$DMG")"
+          HASH=$(shasum -a 256 "$(basename "$DMG")" | tee dmg.sha256 | cut -d' ' -f1)
+          {
+            echo "### macOS DMG checksum"
+            echo "Paste into the release notes:"
+            echo '```'
+            echo "SHA-256: $HASH"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: |
+            publish/mac/*.dmg
+            publish/mac/dmg.sha256
+          if-no-files-found: error
