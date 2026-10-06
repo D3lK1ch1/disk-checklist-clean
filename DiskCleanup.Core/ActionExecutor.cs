@@ -33,6 +33,67 @@ public static class ActionExecutor
         };
     }
 
+    // Runs a whole selection, returning one result per item in the same order.
+    // WSL folder deletes (DeleteFolder / MoveFolderToRecycleBin under \\wsl.localhost\)
+    // are pulled out and deleted from inside the distro via WslBatchDelete, one wsl.exe
+    // call per project (nearest .git ancestor) - so a monorepo's ~200 node_modules
+    // become a single call. Folders outside any repo get a call each. Everything else
+    // goes through Execute unchanged.
+    public static List<ActionResult> ExecuteAll(IReadOnlyList<CheckItem> items)
+    {
+        var results = new ActionResult?[items.Count];
+        var batches = new Dictionary<(string Distro, string Group), List<(int Index, CheckItem Item, WslPath Wsl)>>();
+        var gitCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        bool HasGit(string dir)
+        {
+            if (!gitCache.TryGetValue(dir, out var hasGit))
+            {
+                var git = Path.Combine(dir, ".git");
+                gitCache[dir] = hasGit = Directory.Exists(git) || File.Exists(git); // .git is a file in worktrees
+            }
+            return hasGit;
+        }
+
+        for (int i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            var wsl = AsWslFolderDelete(item);
+            if (wsl == null)
+            {
+                results[i] = Execute(item);
+                continue;
+            }
+
+            var group = WslPaths.FindProjectRoot(item.Path!, HasGit) ?? item.Path!;
+            var key = (wsl.Distro, group);
+            if (!batches.TryGetValue(key, out var batch))
+                batches[key] = batch = new();
+            batch.Add((i, item, wsl));
+        }
+
+        foreach (var ((distro, group), batch) in batches)
+        {
+            var groupLabel = WslPaths.TryParse(group)?.LinuxPath ?? group;
+            var batchResults = WslBatchDelete.Run(distro, groupLabel, batch.Select(b => (b.Item, b.Wsl)).ToList());
+            for (int j = 0; j < batch.Count; j++)
+                results[batch[j].Index] = batchResults[j];
+        }
+
+        return results.Select(r => r!).ToList();
+    }
+
+    // Non-null only for a folder delete that's safe to hand to `rm -rf` inside WSL.
+    // Items with a SecondaryPath keep the old route - WslBatchDelete doesn't handle pairs.
+    // Missing folders also keep the old route so they report "Path not found." as before.
+    static WslPath? AsWslFolderDelete(CheckItem item)
+    {
+        if (item.Action is not (ActionKind.DeleteFolder or ActionKind.MoveFolderToRecycleBin)) return null;
+        if (item.SecondaryPath != null) return null;
+        var wsl = WslPaths.TryParse(item.Path);
+        return wsl != null && Directory.Exists(item.Path) ? wsl : null;
+    }
+
     // Prune commands can run for minutes on a large image cache; volume rm is
     // near-instant. One generous budget covers both.
     static readonly TimeSpan DockerTimeout = TimeSpan.FromMinutes(2);
@@ -146,7 +207,7 @@ public static class ActionExecutor
     }
 
     // WSL deletions free space inside the distro's .vhdx, not on C: directly.
-    static string WslCompactionNote(string? path) =>
+    internal static string WslCompactionNote(string? path) =>
         path != null && path.StartsWith(@"\\wsl.localhost\", StringComparison.OrdinalIgnoreCase)
             ? " Note: free space on C: won't change until the WSL disk image is compacted" +
               " (run: wsl --manage <distro> --set-sparse true)."

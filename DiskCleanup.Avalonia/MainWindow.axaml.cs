@@ -119,7 +119,7 @@ public partial class MainWindow : Window
         var freeBefore = new DriveInfo(systemDrive).AvailableFreeSpace;
 
         var results = await Task.Run(() =>
-            selected.Select(vm => (Vm: vm, Result: ActionExecutor.Execute(vm.Item))).ToList());
+            selected.Zip(ActionExecutor.ExecuteAll(selected.Select(vm => vm.Item).ToList()), (vm, result) => (Vm: vm, Result: result)).ToList());
 
         var log = new System.Text.StringBuilder();
         foreach (var (vm, result) in results)

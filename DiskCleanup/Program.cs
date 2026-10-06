@@ -82,11 +82,10 @@ var freeBefore = new DriveInfo(systemDrive).AvailableFreeSpace;
 
 Console.WriteLine();
 Console.WriteLine("Results:");
-foreach (var item in selectedItems)
+foreach (var result in ActionExecutor.ExecuteAll(selectedItems))
 {
-    var result = ActionExecutor.Execute(item);
     var status = result.Success ? "OK" : "FAILED";
-    Console.WriteLine($"[{status}] {item.Label}: {result.Message}");
+    Console.WriteLine($"[{status}] {result.Item.Label}: {result.Message}");
 }
 
 var freeAfter = new DriveInfo(systemDrive).AvailableFreeSpace;

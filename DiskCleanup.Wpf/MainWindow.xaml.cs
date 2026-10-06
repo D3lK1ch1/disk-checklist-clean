@@ -158,7 +158,7 @@ public partial class MainWindow : Window
         // large cleanups don't freeze the window. Touching _allItems/
         // _visibleItems must stay on the UI thread, so that happens after.
         var results = await Task.Run(() =>
-            selected.Select(vm => (Vm: vm, Result: ActionExecutor.Execute(vm.Item))).ToList());
+            selected.Zip(ActionExecutor.ExecuteAll(selected.Select(vm => vm.Item).ToList()), (vm, result) => (Vm: vm, Result: result)).ToList());
 
         var log = new System.Text.StringBuilder();
         foreach (var (vm, result) in results)
