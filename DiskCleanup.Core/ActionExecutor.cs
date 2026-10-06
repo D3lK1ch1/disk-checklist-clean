@@ -19,6 +19,11 @@ public static class ActionExecutor
 
     public static ActionResult Execute(CheckItem item)
     {
+        // A grouped item's Path is its project folder - running the normal delete
+        // actions on it would delete the whole project. Only ExecuteAll handles these.
+        if (item.GroupPaths != null)
+            return new ActionResult(item, false, "Refused: grouped items can only run through ExecuteAll.");
+
         return item.Action switch
         {
             ActionKind.EmptyRecycleBin => EmptyRecycleBin(item),
@@ -34,15 +39,17 @@ public static class ActionExecutor
     }
 
     // Runs a whole selection, returning one result per item in the same order.
-    // WSL folder deletes (DeleteFolder / MoveFolderToRecycleBin under \\wsl.localhost\)
-    // are pulled out and deleted from inside the distro via WslBatchDelete, one wsl.exe
-    // call per project (nearest .git ancestor) - so a monorepo's ~200 node_modules
-    // become a single call. Folders outside any repo get a call each. Everything else
-    // goes through Execute unchanged.
+    // WSL folder deletes are pulled out and deleted from inside the distro via
+    // WslBatchDelete, one wsl.exe call per project:
+    //   - a grouped item (GroupPaths, built by the WSL scanner - one row per repo)
+    //     sends all its folders as one batch;
+    //   - a single WSL folder item joins the batch of its nearest .git ancestor,
+    //     or gets a call of its own outside any repo.
+    // Everything else goes through Execute unchanged.
     public static List<ActionResult> ExecuteAll(IReadOnlyList<CheckItem> items)
     {
         var results = new ActionResult?[items.Count];
-        var batches = new Dictionary<(string Distro, string Group), List<(int Index, CheckItem Item, WslPath Wsl)>>();
+        var batches = new Dictionary<(string Distro, string Group), List<(int Index, string UncPath, WslPath Wsl)>>();
         var gitCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
         bool HasGit(string dir)
@@ -55,32 +62,85 @@ public static class ActionExecutor
             return hasGit;
         }
 
+        void AddToBatch(int index, string distro, string group, string uncPath, WslPath wsl)
+        {
+            if (!batches.TryGetValue((distro, group), out var batch))
+                batches[(distro, group)] = batch = new();
+            batch.Add((index, uncPath, wsl));
+        }
+
         for (int i = 0; i < items.Count; i++)
         {
             var item = items[i];
-            var wsl = AsWslFolderDelete(item);
-            if (wsl == null)
+
+            if (item.GroupPaths != null)
+            {
+                var targets = AsWslGroupDelete(item, out var refusal);
+                if (targets == null)
+                {
+                    results[i] = new ActionResult(item, false, refusal!);
+                    continue;
+                }
+                foreach (var (uncPath, wsl) in targets)
+                    AddToBatch(i, wsl.Distro, item.Path!, uncPath, wsl);
+                if (targets.Count == 0) // every folder already gone since the scan
+                    results[i] = new ActionResult(item, true, "All folders were already gone.");
+                continue;
+            }
+
+            var single = AsWslFolderDelete(item);
+            if (single == null)
             {
                 results[i] = Execute(item);
                 continue;
             }
-
-            var group = WslPaths.FindProjectRoot(item.Path!, HasGit) ?? item.Path!;
-            var key = (wsl.Distro, group);
-            if (!batches.TryGetValue(key, out var batch))
-                batches[key] = batch = new();
-            batch.Add((i, item, wsl));
+            AddToBatch(i, single.Distro, WslPaths.FindProjectRoot(item.Path!, HasGit) ?? item.Path!, item.Path!, single);
         }
 
+        var outcomesByItem = new Dictionary<int, List<WslDeleteOutcome>>();
+        var batchSizeByItem = new Dictionary<int, (int Size, string Group)>();
         foreach (var ((distro, group), batch) in batches)
         {
+            var outcomes = WslBatchDelete.Run(distro, batch.Select(b => (b.UncPath, b.Wsl)).ToList());
             var groupLabel = WslPaths.TryParse(group)?.LinuxPath ?? group;
-            var batchResults = WslBatchDelete.Run(distro, groupLabel, batch.Select(b => (b.Item, b.Wsl)).ToList());
             for (int j = 0; j < batch.Count; j++)
-                results[batch[j].Index] = batchResults[j];
+            {
+                var index = batch[j].Index;
+                if (!outcomesByItem.TryGetValue(index, out var list))
+                    outcomesByItem[index] = list = new();
+                list.Add(outcomes[j]);
+                batchSizeByItem[index] = (batch.Count, groupLabel);
+            }
         }
 
+        foreach (var (index, outcomes) in outcomesByItem)
+            results[index] = WslResult(items[index], outcomes, batchSizeByItem[index].Size, batchSizeByItem[index].Group);
+
         return results.Select(r => r!).ToList();
+    }
+
+    static ActionResult WslResult(CheckItem item, List<WslDeleteOutcome> outcomes, int batchSize, string groupLabel)
+    {
+        var failed = outcomes.Where(o => o.Failure != null).ToList();
+        var note = WslCompactionNote(item.Path);
+
+        if (item.GroupPaths == null)
+        {
+            var batchNote = batchSize > 1 ? $" (batch of {batchSize} in {groupLabel})" : "";
+            return failed.Count == 0
+                ? new ActionResult(item, true, $"Permanently deleted inside WSL{batchNote} - cannot be undone." + note)
+                : new ActionResult(item, false, $"Could not delete inside WSL. {failed[0].Failure}");
+        }
+
+        var deleted = outcomes.Count - failed.Count;
+        if (failed.Count == 0)
+            return new ActionResult(item, true,
+                $"Permanently deleted all {outcomes.Count} folders inside WSL in one batch - cannot be undone." + note);
+
+        // Any leftover keeps the row FAILED so it stays in the list - rescan to see what's left.
+        return new ActionResult(item, false,
+            $"Deleted {deleted} of {outcomes.Count} folders inside WSL; {failed.Count} still there:{Environment.NewLine}" +
+            string.Join(Environment.NewLine, failed.Select(f => $"{f.UncPath}: {f.Failure}")));
     }
 
     // Non-null only for a folder delete that's safe to hand to `rm -rf` inside WSL.
@@ -92,6 +152,33 @@ public static class ActionExecutor
         if (item.SecondaryPath != null) return null;
         var wsl = WslPaths.TryParse(item.Path);
         return wsl != null && Directory.Exists(item.Path) ? wsl : null;
+    }
+
+    // All-or-nothing safety check for a grouped item: every folder must pass TryParse
+    // and be in the same distro as the project folder, or nothing in the group is
+    // deleted. Folders already gone since the scan are skipped, not failed.
+    static List<(string UncPath, WslPath Wsl)>? AsWslGroupDelete(CheckItem item, out string? refusal)
+    {
+        refusal = null;
+        var project = WslPaths.TryParse(item.Path);
+        if (item.Action is not (ActionKind.DeleteFolder or ActionKind.MoveFolderToRecycleBin) || project == null)
+        {
+            refusal = "Refused: grouped items are only supported for WSL folder deletes.";
+            return null;
+        }
+
+        var targets = new List<(string, WslPath)>();
+        foreach (var path in item.GroupPaths!)
+        {
+            var wsl = WslPaths.TryParse(path);
+            if (wsl == null || wsl.Distro != project.Distro)
+            {
+                refusal = $"Refused: nothing deleted - \"{path}\" isn't a safe WSL path in {project.Distro}.";
+                return null;
+            }
+            if (Directory.Exists(path)) targets.Add((path, wsl));
+        }
+        return targets;
     }
 
     // Prune commands can run for minutes on a large image cache; volume rm is

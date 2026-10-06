@@ -35,20 +35,9 @@ public class WslBatchDeleteTests
     [Fact]
     public void E2E_PnpmSymlinkNodeModules_DeletedInOneBatch_TargetsSurvive()
     {
-        var (distro, home) = (Wsl("echo $WSL_DISTRO_NAME"), Wsl("echo $HOME"));
-        if (distro == null || home == null) return;
-
-        var name = "diskcleanup-e2e-" + Guid.NewGuid().ToString("N")[..8];
-        var linuxRoot = $"{home}/{name}";
-        var setup = Wsl(
-            $"mkdir -p {linuxRoot}/.git {linuxRoot}/store/lodash {linuxRoot}/packages/a/node_modules/.bin {linuxRoot}/packages/b/node_modules" +
-            $" && echo x > {linuxRoot}/store/lodash/index.js" +
-            $" && ln -s {linuxRoot}/store/lodash {linuxRoot}/packages/a/node_modules/lodash" +
-            $" && ln -s {linuxRoot}/store/lodash/index.js {linuxRoot}/packages/a/node_modules/.bin/lodash" +
-            $" && ln -s ../../../store/lodash {linuxRoot}/packages/b/node_modules/lodash && echo ok");
-        Assert.Equal("ok", setup);
-
-        var uncRoot = $@"\\wsl.localhost\{distro}{home.Replace('/', '\\')}\{name}";
+        var repo = CreatePnpmShapedRepo();
+        if (repo == null) return;
+        var (linuxRoot, uncRoot) = repo.Value;
         try
         {
             var items = new[]
@@ -69,6 +58,59 @@ public class WslBatchDeleteTests
         {
             Wsl($"rm -rf {linuxRoot}");
         }
+    }
+
+    // Same throwaway repo, but scanned for real: the WSL scanner should fold both
+    // node_modules into ONE row for the repo, and cleaning that one row should delete
+    // both folders while leaving the repo folder, its .git, and the symlink targets alone.
+    [Fact]
+    public void E2E_ScannerFoldsRepoIntoOneRow_CleaningItDeletesOnlyItsFolders()
+    {
+        var repo = CreatePnpmShapedRepo();
+        if (repo == null) return;
+        var (linuxRoot, uncRoot) = repo.Value;
+        try
+        {
+            var row = WindowsScanners.Wsl().SingleOrDefault(i => string.Equals(i.Path, uncRoot, StringComparison.OrdinalIgnoreCase));
+            Assert.NotNull(row);
+            Assert.Equal(2, row!.GroupPaths!.Count);
+            Assert.Contains("2 build folders", row.Label);
+
+            var result = Assert.Single(ActionExecutor.ExecuteAll(new[] { row }));
+
+            Assert.True(result.Success, result.Message);
+            Assert.Contains("all 2 folders", result.Message);
+            Assert.All(row.GroupPaths, p => Assert.False(Directory.Exists(p)));
+            Assert.Equal("ok", Wsl($"test -d {linuxRoot}/.git && test -f {linuxRoot}/packages/a/package.json && echo ok"));
+            Assert.Equal("x", Wsl($"cat {linuxRoot}/store/lodash/index.js"));
+        }
+        finally
+        {
+            Wsl($"rm -rf {linuxRoot}");
+        }
+    }
+
+    // Builds ~/diskcleanup-e2e-<guid>: a .git folder, two packages (with package.json +
+    // pnpm-lock.yaml so the scanner classifies them SAFE) whose node_modules hold
+    // absolute, relative and .bin symlinks into a shared "store" folder. Null when WSL
+    // isn't available.
+    static (string LinuxRoot, string UncRoot)? CreatePnpmShapedRepo()
+    {
+        var (distro, home) = (Wsl("echo $WSL_DISTRO_NAME"), Wsl("echo $HOME"));
+        if (distro == null || home == null) return null;
+
+        var name = "diskcleanup-e2e-" + Guid.NewGuid().ToString("N")[..8];
+        var r = $"{home}/{name}";
+        var setup = Wsl(
+            $"mkdir -p {r}/.git {r}/store/lodash {r}/packages/a/node_modules/.bin {r}/packages/b/node_modules" +
+            $" && echo x > {r}/store/lodash/index.js" +
+            $" && for p in a b; do echo '{{}}' > {r}/packages/$p/package.json; touch {r}/packages/$p/pnpm-lock.yaml; done" +
+            $" && ln -s {r}/store/lodash {r}/packages/a/node_modules/lodash" +
+            $" && ln -s {r}/store/lodash/index.js {r}/packages/a/node_modules/.bin/lodash" +
+            $" && ln -s ../../../store/lodash {r}/packages/b/node_modules/lodash && echo ok");
+        Assert.Equal("ok", setup);
+
+        return (r, $@"\\wsl.localhost\{distro}{home.Replace('/', '\\')}\{name}");
     }
 
     static string? Wsl(string script)

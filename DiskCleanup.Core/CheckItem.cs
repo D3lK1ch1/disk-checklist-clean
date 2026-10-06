@@ -27,7 +27,11 @@ public record CheckItem(
     // Paired folder that gets removed alongside Path in the same action, e.g. a
     // Claude Code session's <sessionId>/ subagents+tool-results dir next to its .jsonl.
     // Only MoveFileToRecycleBin honors this today - not a generic multi-path mechanism.
-    string? SecondaryPath = null)
+    string? SecondaryPath = null,
+    // Folders this one row deletes together, e.g. every node_modules in one WSL repo.
+    // When set, Path is the project folder for display only and is NEVER deleted itself:
+    // Execute refuses grouped items, and ExecuteAll deletes exactly these paths.
+    IReadOnlyList<string>? GroupPaths = null)
 {
     public string FormattedSize => SizeOverride ?? Format(SizeBytes);
 

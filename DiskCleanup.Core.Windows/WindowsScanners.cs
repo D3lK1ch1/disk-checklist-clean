@@ -101,6 +101,7 @@ public static class WindowsScanners
 
                     var dirScan = FindBuildDirs(userDir);
 
+                    var buildItems = new List<CheckItem>();
                     foreach (var buildDir in dirScan.BuildDirs)
                     {
                         var rel = System.IO.Path.GetRelativePath(userDir, buildDir);
@@ -109,8 +110,24 @@ public static class WindowsScanners
                         var label = $"WSL ({distro}) ~/{rel.Replace('\\', '/')}";
                         var size = Scanners.GetDirectorySize(buildDir);
 
-                        items.Add(Scanners.ClassifyBuildDir(label, size, buildDir, parentDir, dirName, $"~/{rel.Replace('\\', '/')}"));
+                        buildItems.Add(Scanners.ClassifyBuildDir(label, size, buildDir, parentDir, dirName, $"~/{rel.Replace('\\', '/')}"));
                     }
+
+                    // One row per repo instead of one per node_modules/target.
+                    var gitCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                    bool HasGit(string dir)
+                    {
+                        if (!gitCache.TryGetValue(dir, out var hasGit))
+                        {
+                            var git = System.IO.Path.Combine(dir, ".git");
+                            gitCache[dir] = hasGit = Directory.Exists(git) || File.Exists(git); // .git is a file in worktrees
+                        }
+                        return hasGit;
+                    }
+                    items.AddRange(Scanners.GroupBuildDirsByProject(
+                        buildItems,
+                        path => WslPaths.FindProjectRoot(path, HasGit),
+                        root => $"WSL ({distro}) ~/{System.IO.Path.GetRelativePath(userDir, root).Replace('\\', '/')}"));
 
                     foreach (var excludedDir in dirScan.ExcludedAppDataDirs)
                     {
