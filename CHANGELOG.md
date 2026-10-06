@@ -1,5 +1,72 @@
 # Changelog
 
+## Session 2026-10-06
+
+### Fixed
+- **WSL folder deletes failed with "The directory is not empty" — ~200 rows in one run.**
+  A real Clean Selected against a pnpm monorepo (`~/projects/deepseek-harness`) failed on
+  every `packages/*/*/node_modules`, plus `~/.config/opencode/node_modules` and
+  `~/.opencode/node_modules` (blocked on their `.bin`). pnpm's per-package `node_modules` are
+  mostly Linux symlinks, and deleting through `\\wsl.localhost\` from Windows (the 9P file
+  share) can't remove them, so the directory is left non-empty. (Exact 9P mechanism not
+  pinned down — likely the share doesn't surface them as reparse points `SafeDeleteTree`
+  can unlink — but the fix doesn't depend on it.)
+  WSL folder deletes now run *inside* the distro instead:
+  - **`WslBatchDelete.cs` (new)** — one `wsl.exe -d <distro> --exec xargs -0 -r rm -rf --`
+    per batch. Paths go over stdin NUL-separated: `--exec` means no Linux shell parses them,
+    and stdin sidesteps the Windows command-line length limit for large batches. `rm` removes
+    a symlink as a link only, never its target. The exit code isn't trusted per item — after
+    the run each folder is checked with `Directory.Exists`, so every row still gets its own
+    `[OK]`/`[FAILED]`. Failures quote that path's own `rm` error lines and suggest
+    `wsl -d <distro> -- rm -rf '<path>'` (with `-u root` when the error is "Permission
+    denied", e.g. folders created by a Docker container). `WSL_UTF8=1` keeps wsl.exe's own
+    error messages from arriving as garbled UTF-16. 10-minute timeout per batch.
+  - **`ActionExecutor.ExecuteAll` (new)** — runs a whole selection and returns results in
+    input order. WSL `DeleteFolder`/`MoveFolderToRecycleBin` items are grouped by distro +
+    project root (nearest `.git` ancestor, cached per folder) and sent as one batch per
+    group, so the monorepo's ~200 rows become a single `wsl.exe` call; folders outside any
+    repo (`~/.cache`, `~/.npm`, pnpm store, opencode) get a call each. Everything else goes
+    through the unchanged `Execute`. Items with a `SecondaryPath`, or whose folder no longer
+    exists, keep the old route.
+  - **`WslPaths.cs` (new)** — `TryParse` turns `\\wsl.localhost\<distro>\home\<user>\...`
+    into distro + Linux path and refuses anything unsafe to hand to `rm -rf`: non-WSL paths,
+    the home folder itself or anything outside `/home/<user>/`, `.`/`..` segments, and any
+    path through `.vscode-server`/`.cursor-server`/`.windsurf-server` (duplicated from the
+    scanner's exclusion list as a last line of defence — see the VS Code Server corruption
+    incident). `FindProjectRoot` ignores a `.git` at `~` itself so a dotfiles repo doesn't
+    lump every WSL item into one batch.
+  - Console app, WPF and Avalonia all switched from per-item `Execute` to `ExecuteAll`.
+  - `WslCompactionNote` bumped from `private` to `internal` so the batch results reuse it.
+
+### Tests
+- `WslPathsTests.cs` (new, 15): `TryParse` happy paths plus 9 refusal cases (null, non-WSL,
+  other UNC share, `/home`, the home folder, outside `/home`, `..` traversal, `.vscode-server`,
+  `.cursor-server`); `FindProjectRoot` nearest-repo, no-repo, dotfiles-at-home, and
+  doesn't-count-the-item-itself cases. Pure string tests, no distro needed.
+- `WslBatchDeleteTests.cs` (new): `ExecuteAll_NonWslItems_ReturnResultsInInputOrder`, and
+  `E2E_PnpmSymlinkNodeModules_DeletedInOneBatch_TargetsSurvive` — builds a throwaway
+  pnpm-shaped repo in the real default distro (`~/diskcleanup-e2e-<guid>` with `.git`, two
+  packages whose `node_modules` hold absolute and relative symlinks plus a `.bin` symlink),
+  deletes both via `ExecuteAll`, and asserts both are gone, both report `batch of 2`, and the
+  symlinks' target file is untouched. Only ever touches its own folder.
+
+### Known gaps
+- WSL deletes are still permanent (as before — the Recycle Bin never supported WSL paths),
+  and C: free space doesn't change until the distro's `.vhdx` is compacted. Deleting a
+  pnpm package's `node_modules` frees almost nothing on its own; the real bytes sit in the
+  root `node_modules/.pnpm` and the pnpm store.
+- The E2E test returns early (passes without asserting) when WSL isn't available — same
+  xunit 2 limitation as the Docker E2E test.
+- First delete after `wsl --shutdown` pays the distro's cold-start time.
+- Live Clean Selected re-run against the real `deepseek-harness` rows not yet done as of
+  this entry.
+
+### Verification
+- `dotnet build` (solution-wide) — 0 warnings, 0 errors.
+- `dotnet test` — 105 passed, 0 failed, 0 skipped. WSL confirmed reachable from the test
+  run (`WSL_DISTRO_NAME=Ubuntu`), so the E2E test genuinely asserted against a real distro;
+  no leftover `~/diskcleanup-e2e-*` folder afterwards.
+
 ## [0.0.2] - 2026-10-02
 
 First macOS build — an experimental, ad-hoc-signed `.dmg` for Apple Silicon, published as a
