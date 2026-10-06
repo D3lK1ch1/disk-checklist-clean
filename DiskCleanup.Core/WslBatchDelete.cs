@@ -3,6 +3,9 @@ using System.Text;
 
 namespace DiskCleanup.Core;
 
+// Failure is null when the folder is gone after the run.
+public record WslDeleteOutcome(string UncPath, string? Failure);
+
 // Deletes WSL folders from *inside* the distro. Deleting through \\wsl.localhost\
 // from Windows can't remove Linux symlinks (pnpm node_modules are mostly symlinks),
 // so it fails with "The directory is not empty". rm inside Linux handles them, and
@@ -17,21 +20,19 @@ static class WslBatchDelete
     // in paths can't be misread, and the Windows command-line length limit never applies
     // however many folders are in the batch.
     //
-    // The exit code is not trusted per item - after the run, each folder is checked for
-    // existence, so every item still gets its own OK/FAILED.
-    public static List<ActionResult> Run(string distro, string groupLabel, IReadOnlyList<(CheckItem Item, WslPath Wsl)> batch)
+    // The exit code is not trusted per path - after the run, each folder is checked for
+    // existence, so every path gets its own outcome, in input order.
+    public static List<WslDeleteOutcome> Run(string distro, IReadOnlyList<(string UncPath, WslPath Wsl)> targets)
     {
-        var (output, error) = RunWsl(distro, batch.Select(b => b.Wsl.LinuxPath));
+        var (output, error) = RunWsl(distro, targets.Select(t => t.Wsl.LinuxPath));
         var outputLines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var batchNote = batch.Count > 1 ? $" (batch of {batch.Count} in {groupLabel})" : "";
 
-        var results = new List<ActionResult>();
-        foreach (var (item, wsl) in batch)
+        var outcomes = new List<WslDeleteOutcome>();
+        foreach (var (uncPath, wsl) in targets)
         {
-            if (!Directory.Exists(item.Path))
+            if (!Directory.Exists(uncPath))
             {
-                results.Add(new ActionResult(item, true,
-                    $"Permanently deleted inside WSL{batchNote} - cannot be undone." + ActionExecutor.WslCompactionNote(item.Path)));
+                outcomes.Add(new WslDeleteOutcome(uncPath, null));
                 continue;
             }
 
@@ -43,11 +44,10 @@ static class WslBatchDelete
 
             // Root-owned files (e.g. created by a Docker container) need root inside WSL.
             var asRoot = detail.Contains("Permission denied", StringComparison.OrdinalIgnoreCase) ? "-u root " : "";
-            results.Add(new ActionResult(item, false,
-                $"Could not delete inside WSL. {detail}{Environment.NewLine}" +
-                $"Run yourself: wsl -d {distro} {asRoot}-- rm -rf '{wsl.LinuxPath}'"));
+            outcomes.Add(new WslDeleteOutcome(uncPath,
+                $"{detail}{Environment.NewLine}Run yourself: wsl -d {distro} {asRoot}-- rm -rf '{wsl.LinuxPath}'"));
         }
-        return results;
+        return outcomes;
     }
 
     // Returns combined stdout+stderr, plus an error string only when wsl.exe itself
