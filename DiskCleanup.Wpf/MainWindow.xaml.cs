@@ -44,6 +44,7 @@ public partial class MainWindow : Window
             result.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));
             result.AddRange(WindowsScanners.StalePackages(warnings: warnings));
             result.AddRange(WindowsScanners.RoamingAppData(warnings: warnings));
+            result.AddRange(WindowsScanners.NpmGlobalPackages(warnings: warnings));
             result.AddRange(Scanners.AiFolders(warnings));
             result.AddRange(WindowsScanners.InstalledAppsBySize(warnings: warnings));
             result.AddRange(Scanners.PersonalFolders(warnings: warnings));

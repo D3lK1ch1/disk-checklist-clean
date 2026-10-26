@@ -498,6 +498,55 @@ public static class WindowsScanners
         return items;
     }
 
+    // npm itself is excluded: `npm uninstall -g npm` removes the tool you'd need
+    // to reinstall anything. corepack ships with Node and is managed by it.
+    static readonly HashSet<string> NpmGlobalExclusions = new(StringComparer.OrdinalIgnoreCase) { "npm", "corepack" };
+
+    // One row per globally installed npm tool. Each global package keeps its whole
+    // dependency tree nested inside its own folder, so the folder size is the real
+    // cost of that one tool. Never deleted from here: npm also writes launcher
+    // shims (<bin>.cmd/.ps1) into %APPDATA%\npm under names taken from the
+    // package's "bin" field, so a folder delete would leave broken launchers -
+    // the command suggestion lets npm clean up both.
+    //
+    // rootOverride exists only so tests can point at a fake tree instead of the
+    // real %APPDATA%\npm\node_modules - production callers pass neither.
+    public static List<CheckItem> NpmGlobalPackages(string? rootOverride = null, List<string>? warnings = null)
+    {
+        var items = new List<CheckItem>();
+        var root = rootOverride ?? System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm", "node_modules");
+        if (!Directory.Exists(root)) return items;
+
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(root))
+            {
+                var name = System.IO.Path.GetFileName(dir);
+                if (name.StartsWith('.')) continue;
+
+                // Scoped packages (@openai/codex) are two levels deep - the scope
+                // folder is a namespace, not a package.
+                var packageDirs = name.StartsWith('@')
+                    ? Directory.EnumerateDirectories(dir).Select(d => (Dir: d, Name: $"{name}/{System.IO.Path.GetFileName(d)}"))
+                    : new[] { (Dir: dir, Name: name) };
+
+                foreach (var (packageDir, packageName) in packageDirs)
+                {
+                    if (NpmGlobalExclusions.Contains(packageName)) continue;
+
+                    var size = Scanners.GetDirectorySize(packageDir);
+                    items.Add(new CheckItem($"npm global: {packageName}", size, "REVIEW", packageDir,
+                        Action: ActionKind.SuggestCommand,
+                        CommandSuggestion: $"npm uninstall -g {packageName}",
+                        Reason: "Globally installed npm tool. Size includes its entire nested dependency tree. Run the suggested command to remove it along with its launchers in %APPDATA%\\npm - deleting the folder directly would leave broken launchers behind. Reinstall any time with `npm i -g " + packageName + "`."));
+                }
+            }
+        }
+        catch (Exception ex) { warnings?.Add($"npm global packages: could not scan ({ex.Message})"); }
+        return items;
+    }
+
     public static List<CheckItem> InstalledAppsBySize(int topN = 10, List<string>? warnings = null)
     {
         var apps = new List<(string Name, long SizeBytes)>();

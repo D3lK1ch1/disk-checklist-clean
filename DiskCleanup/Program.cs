@@ -20,6 +20,7 @@ items.AddRange(WindowsScanners.SystemRootClutter(warnings: warnings));
 items.AddRange(Scanners.DownloadsTopFolders(warnings: warnings));
 items.AddRange(WindowsScanners.StalePackages(warnings: warnings));
 items.AddRange(WindowsScanners.RoamingAppData(warnings: warnings));
+items.AddRange(WindowsScanners.NpmGlobalPackages(warnings: warnings));
 items.AddRange(Scanners.AiFolders(warnings));
 items.AddRange(WindowsScanners.InstalledAppsBySize(warnings: warnings));
 items.AddRange(Scanners.PersonalFolders(warnings: warnings));

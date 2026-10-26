@@ -713,4 +713,76 @@ public class ScannersTests
         Assert.StartsWith("Base reason.", result);
         Assert.Contains(expectedSubstring, result);
     }
+    static string CreateFakeNpmGlobalRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_NpmGlobal_" + Guid.NewGuid());
+        // Plain package with a nested dependency - its size must include the nested file.
+        Directory.CreateDirectory(Path.Combine(root, "n8n", "node_modules", "express"));
+        File.WriteAllText(Path.Combine(root, "n8n", "package.json"), "{}");
+        File.WriteAllText(Path.Combine(root, "n8n", "node_modules", "express", "index.js"), new string('x', 1000));
+        // Scoped package - must be reported as @openai/codex, not @openai.
+        Directory.CreateDirectory(Path.Combine(root, "@openai", "codex"));
+        File.WriteAllText(Path.Combine(root, "@openai", "codex", "package.json"), "{}");
+        // Excluded: uninstalling these breaks npm/Node itself.
+        Directory.CreateDirectory(Path.Combine(root, "npm"));
+        Directory.CreateDirectory(Path.Combine(root, "corepack"));
+        // npm's own bookkeeping folder - not a package.
+        Directory.CreateDirectory(Path.Combine(root, ".bin"));
+        return root;
+    }
+
+    [Fact]
+    public void NpmGlobalPackages_ListsPlainAndScopedPackages_SkipsNpmCorepackAndDotDirs()
+    {
+        var root = CreateFakeNpmGlobalRoot();
+        try
+        {
+            var items = WindowsScanners.NpmGlobalPackages(rootOverride: root);
+
+            Assert.Equal(new[] { "npm global: @openai/codex", "npm global: n8n" },
+                items.Select(i => i.Label).OrderBy(l => l, StringComparer.Ordinal).ToArray());
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void NpmGlobalPackages_SuggestsUninstallCommand_NeverDeletes()
+    {
+        var root = CreateFakeNpmGlobalRoot();
+        try
+        {
+            var items = WindowsScanners.NpmGlobalPackages(rootOverride: root);
+
+            Assert.All(items, i =>
+            {
+                Assert.Equal("REVIEW", i.Risk);
+                Assert.Equal(ActionKind.SuggestCommand, i.Action);
+                Assert.False(string.IsNullOrWhiteSpace(i.Reason));
+            });
+            Assert.Equal("npm uninstall -g @openai/codex", items.Single(i => i.Label.EndsWith("@openai/codex")).CommandSuggestion);
+            Assert.Equal("npm uninstall -g n8n", items.Single(i => i.Label.EndsWith("n8n")).CommandSuggestion);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void NpmGlobalPackages_SizeIncludesNestedDependencies()
+    {
+        var root = CreateFakeNpmGlobalRoot();
+        try
+        {
+            var n8n = WindowsScanners.NpmGlobalPackages(rootOverride: root).Single(i => i.Label.EndsWith("n8n"));
+
+            Assert.True(n8n.SizeBytes >= 1000);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void NpmGlobalPackages_RootMissing_ReturnsEmpty()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "DiskCleanupTests_NpmGlobalMissing_" + Guid.NewGuid());
+
+        Assert.Empty(WindowsScanners.NpmGlobalPackages(rootOverride: root));
+    }
 }
